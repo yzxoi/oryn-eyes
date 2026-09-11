@@ -1,0 +1,35 @@
+name: Verify and build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap ripgrep
+      - run: bun run check
+      - run: bun run core:install
+      - run: bun run smoke
+      - name: Package Linux deployment
+        run: |
+          mkdir -p bin dist
+          curl --fail --location --retry 3 https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64-baseline.zip --output dist/bun.zip
+          unzip -j dist/bun.zip '*/bun' -d bin
+          cp /usr/bin/rg bin/rg
+          tar -czf dist/oryn-eyes-linux-x64.tar.gz bin src script config deploy astrbot_plugin_oryn_eyes node_modules .runtime package.json bun.lock README.md LICENSE NOTICE.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: oryn-eyes-linux-x64
+          path: dist/oryn-eyes-linux-x64.tar.gz
+          retention-days: 7

@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/SII-Holos/synergy.git",
+  "commit": "a8fe3654c31af22597183079efdbbc5925bbeb72",
+  "packages": [
+    "packages/harness",
+    "packages/runtime-local",
+    "packages/util",
+    "packages/synergy-link-protocol"
+  ]
+}

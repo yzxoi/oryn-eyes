@@ -1,0 +1,7 @@
+name: astrbot_plugin_oryn_eyes
+display_name: Oryn Eyes
+desc: Multimodal QQ support and automatic GitHub issue intake through Synergy Core.
+version: v0.1.0
+author: yzxoi
+repo: https://github.com/yzxoi/oryn-eyes
+

@@ -1,0 +1,23 @@
+{
+  "name": "oryn-eyes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "scripts": {
+    "start": "bun src/server.ts",
+    "test": "bun test test",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun test test && python3 -m unittest discover -s test -p \"test_*.py\"",
+    "core:install": "bun script/install-core.ts",
+    "worker:build": "bun build src/worker.ts --target=bun --external \"@ericsanchezok/*\" --outfile .runtime/worker.js",
+    "smoke": "bun script/smoke.ts"
+  },
+  "dependencies": {
+    "zod": "4.1.8"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "5.9.3"
+  }
+}

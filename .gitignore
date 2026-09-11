@@ -1,0 +1,9 @@
+node_modules/
+.runtime/
+.env*
+!.env.example
+*.log
+__pycache__/
+dist/
+.DS_Store
+

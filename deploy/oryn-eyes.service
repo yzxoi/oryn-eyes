@@ -1,0 +1,30 @@
+[Unit]
+Description=Oryn Eyes multimodal QQ support
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/oryn-eyes
+ExecStart=%h/oryn-eyes/bin/bun %h/oryn-eyes/src/server.ts
+EnvironmentFile=%h/.config/oryn-eyes/model.env
+EnvironmentFile=%h/.config/oryn-eyes/github.env
+EnvironmentFile=%h/.config/oryn-eyes/bridge.env
+Environment=ORYN_REPOSITORY=YourTongji/YourTJ-Hub
+Environment=ORYN_BUDGET_SECONDS=900
+Environment=ORYN_CONCURRENCY=2
+Environment=PATH=%h/oryn-eyes/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+NoNewPrivileges=true
+MemoryMax=3G
+TasksMax=192
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
+
+[Install]
+WantedBy=default.target
