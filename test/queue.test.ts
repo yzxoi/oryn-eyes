@@ -18,3 +18,12 @@ test("a cancelled queued request never starts", async () => {
   expect(queue.cancel(b.job.id)).toBe(true); unblock(); await Bun.sleep(5);
   expect(ran).toBe(false); expect(b.job.status).toBe("cancelled");
 });
+
+test("same-sender turns are serialized while other senders can proceed", async () => {
+  const queue = new Queue(2, 5); let release!: () => void; const order: string[] = [];
+  queue.submit("a", "g", "u", () => new Promise<void>(r => { release = r; order.push("first"); }));
+  queue.submit("b", "g", "u", async () => { order.push("followup"); });
+  queue.submit("c", "g", "v", async () => { order.push("other"); });
+  await Bun.sleep(2); expect(order).toEqual(["first", "other"]);
+  release(); await Bun.sleep(2); expect(order).toEqual(["first", "other", "followup"]);
+});

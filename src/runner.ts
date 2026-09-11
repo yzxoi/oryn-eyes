@@ -101,6 +101,7 @@ export async function runHarness(
         for (const line of lines) {
           const progress = parseProgress(line);
           if (progress) console.error(JSON.stringify(progress));
+          if (line.startsWith('{"event":"format_correction"')) console.error(line.replaceAll(settings.apiKey, "[redacted]"));
         }
       }
     })();

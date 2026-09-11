@@ -10,6 +10,8 @@ Core gets read/search/image tools and a narrowly allowed webfetch gateway for Gi
 
 The result schema separates a user's report, source-supported facts, hypotheses, and unknowns. Fact path/line/quote validation guards against fabricated citations. No runtime reproduction is claimed. Direct creation follows the user's explicit policy; there is no confirmation-draft workflow. A successful GitHub search is required before creation.
 
+Provider output is schema-validated, including when one valid JSON object is wrapped in prose. Multiple conflicting valid objects are rejected. Format correction is bounded by the same task deadline, and its failure reason is logged without the model output. Same-sender tasks are serialized; other senders can run concurrently. Brief status-poll failures are retried without resubmitting the task.
+
 Screenshot publication uses a content-addressed file on a dedicated repository branch. Screenshots are not stored in a local long-term archive. Stable public assets belong to the GitHub feedback record. No raw QQ identities are included in public records.
 
 Delivery uses an authenticated local API, non-destructive status polling, bounded queues, sender-scoped cancellation and ephemeral deduplication. The Issue marker allows recovery of ambiguous writes from recent Issues; exactly-once messaging across arbitrary outages is outside this design. No blind retry of a write is allowed.

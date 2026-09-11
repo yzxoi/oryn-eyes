@@ -338,6 +338,7 @@ try {
               error instanceof Error
                 ? error.message.slice(0, 1500)
                 : "Invalid report";
+            console.error(JSON.stringify({ event: "format_correction", attempt: formatAttempt + 1, reason: formatError }));
             if (formatAttempt === 2)
               throw new Error(
                 "Report format correction exhausted: " + formatError,

@@ -6,6 +6,7 @@ export class Queue {
   private keys = new Map<string, string>();
   private pending: { job: Job; run: (job: Job) => Promise<void> }[] = [];
   private active = new Set<string>();
+  private actors = new Set<string>();
   constructor(private concurrency: number, private limit: number, private ttl = 30 * 60_000) {}
   get(id: string) { this.expire(); return this.jobs.get(id); }
   stats() { this.expire(); return { active: this.active.size, queued: this.pending.length, retained: this.jobs.size }; }
@@ -21,12 +22,15 @@ export class Queue {
   }
   private pump() {
     while (this.active.size < this.concurrency) {
-      const entry = this.pending.shift();
+      const index = this.pending.findIndex(({ job }) => job.status === "cancelled" || !this.actors.has(JSON.stringify([job.conversation, job.sender])));
+      if (index < 0) return;
+      const entry = this.pending.splice(index, 1)[0];
       if (!entry) return;
       const { job, run } = entry;
       if (job.status === "cancelled") continue;
-      job.status = "running"; this.active.add(job.id);
-      void run(job).catch(() => { if (job.status !== "cancelled") { job.status = "failed"; job.reply = "⚠️ 本次处理失败，请稍后重试。"; } }).finally(() => { job.updated = Date.now(); this.active.delete(job.id); this.pump(); });
+      const actor = JSON.stringify([job.conversation, job.sender]);
+      job.status = "running"; this.active.add(job.id); this.actors.add(actor);
+      void run(job).catch(() => { if (job.status !== "cancelled") { job.status = "failed"; job.reply = "⚠️ 本次处理失败，请稍后重试。"; } }).finally(() => { job.updated = Date.now(); this.active.delete(job.id); this.actors.delete(actor); this.pump(); });
     }
   }
   cancel(id: string) {

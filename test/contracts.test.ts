@@ -19,6 +19,12 @@ test("a create result must contain an issue; QA needs no issue fields", () => {
   expect(parseAnalysis('```json\n{"action":"qa","reply":"hello"}\n```').reply).toBe("hello");
 });
 
+test("extract one typed result from prose without accepting ambiguous results", () => {
+  expect(parseAnalysis('Both checks passed.\n```json\n{"action":"qa","reply":"value {x} and \\\"quoted\\\""}\n```').action).toBe("qa");
+  expect(() => parseAnalysis('{"action":"qa","reply":"one"}\n{"action":"qa","reply":"two"}')).toThrow("found 2");
+  expect(() => parseAnalysis('No structured result')).toThrow("found 0");
+});
+
 test("reject MIME spoofing and malformed image bytes", () => {
   expect(() => validateImage({ id: "x", context: "test", mime: "image/png", data: Buffer.from("not a png").toString("base64") })).toThrow();
 });
