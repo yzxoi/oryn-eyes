@@ -1,4 +1,6 @@
 import importlib.util
+import base64
+import io
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -22,6 +24,26 @@ class BridgeTest(unittest.TestCase):
         self.assertTrue(bridge.trusted_image_url("https://multimedia.nt.qq.com/download?x=1"))
         for url in ["file:///etc/passwd", "http://127.0.0.1/private", "https://qq.com.evil.example/x", "https://qq.com:123/x", "https://a@qq.com/x"]:
             self.assertFalse(bridge.trusted_image_url(url))
+
+    def test_screenshot_normalization_removes_metadata_and_bounds_dimensions(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow is installed by CI and the AstrBot plugin environment")
+        original = Image.new("RGB", (2400, 100), "red")
+        exif = original.getexif()
+        exif[0x010E] = "private-fixture-metadata"
+        encoded = io.BytesIO()
+        original.save(encoded, format="JPEG", exif=exif)
+        class Opener:
+            def open(self, *args, **kwargs): return io.BytesIO(encoded.getvalue())
+        with patch.object(bridge.urllib.request, "build_opener", return_value=Opener()):
+            result = bridge.download_image("https://gchat.qpic.cn/test.jpg", "test", "fixture")
+        data = base64.b64decode(result["data"])
+        self.assertNotIn(b"private-fixture-metadata", data)
+        with Image.open(io.BytesIO(data)) as image:
+            self.assertLessEqual(max(image.size), 2048)
+            self.assertFalse(image.getexif())
 
 
 if __name__ == "__main__":

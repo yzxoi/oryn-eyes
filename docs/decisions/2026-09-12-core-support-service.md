@@ -20,4 +20,6 @@ Delivery uses an authenticated local API, non-destructive status polling, bounde
 
 Live GitHub verification demonstrated that an immediately created Issue can be absent from a subsequent list response. Successful publication results and concurrent publication promises therefore stay in memory for 30 minutes. An ambiguous write is fenced from another POST until its marker is recovered; read-side lag must not turn a retry into a duplicate. Regression tests simulate both stale lists and lost write responses.
 
+The deployed AstrBot scheduler stops iterating a plugin generator as soon as an event is marked stopped. The bridge therefore stops propagation only after all receipt/progress/result yields have been consumed. A behavioral test mirrors this scheduler rule, including image-only input, so an early stop cannot silently prevent forwarding.
+
 Validation: behavioral tests cover message/image validation, sender context isolation, cancellation, publication recovery and source citation validation. Real Core smoke checks provider-bound image bytes, file and gateway tools, and interleaved reasoning. Live provider and deployed service probes are documented in delivery evidence rather than committed raw logs.

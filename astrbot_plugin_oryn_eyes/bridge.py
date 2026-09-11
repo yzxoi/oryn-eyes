@@ -40,6 +40,7 @@ def download_image(url: str, image_id: str, context: str) -> dict:
         image.seek(0)
         normalized = ImageOps.exif_transpose(image).convert("RGB")
         normalized.thumbnail((2048, 2048))
+        normalized.info.clear()
         output = io.BytesIO()
         normalized.save(output, format="PNG")
         mime = "image/png"

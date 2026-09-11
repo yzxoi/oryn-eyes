@@ -6,4 +6,4 @@ node_modules/
 __pycache__/
 dist/
 .DS_Store
-
+.venv/
