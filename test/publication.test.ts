@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { IssueDraft } from "../src/contracts";
-import { renderIssue, validateFacts } from "../src/render";
+import { renderIssue, validateFacts, groundReplyLinks } from "../src/render";
 import { GitHub } from "../src/github";
 
 test("fact citations require a matching source quote and cannot escape workspace", async () => {
@@ -29,4 +29,49 @@ test("ambiguous create failure recovers the existing issue without replaying POS
   const gh = new GitHub("a/b", "fake", transport);
   expect((await gh.create("Example", result.body, [], "key")).number).toBe(7);
   expect(writes).toBe(1);
+});
+
+test("concurrent tasks share one download for the same immutable source revision", async () => {
+  let requests = 0;
+  const transport = (async (_input: unknown) => { requests++; await Bun.sleep(2); return new Response("archive fixture"); }) as typeof fetch;
+  const gh = new GitHub("a/b", "fake", transport);
+  const [a, b] = await Promise.all([gh.archive("a".repeat(40)), gh.archive("a".repeat(40))]);
+  expect(a).toEqual(b); expect(requests).toBe(1);
+  await gh.archive("b".repeat(40)); expect(requests).toBe(2);
+});
+
+test("stale GitHub issue lists cannot cause duplicate successful publication", async () => {
+  let writes = 0;
+  const transport = (async (_input: unknown, init?: RequestInit) => {
+    if (init?.method === "POST") { writes++; return Response.json({ number: writes, title: "Example", body: "marker", state: "open", html_url: `https://github.com/a/b/issues/${writes}` }); }
+    return Response.json([]);
+  }) as typeof fetch;
+  const gh = new GitHub("a/b", "fake", transport);
+  const [a, b] = await Promise.all([gh.create("Example", "marker", [], "key"), gh.create("Example", "marker", [], "key")]);
+  expect(a.number).toBe(b.number);
+  expect((await gh.create("Example", "marker", [], "key")).number).toBe(a.number);
+  expect(writes).toBe(1);
+});
+
+test("an unresolved ambiguous write is fenced against subsequent POST attempts", async () => {
+  let writes = 0;
+  const transport = (async (_input: unknown, init?: RequestInit) => {
+    if (init?.method === "POST") { writes++; throw new Error("connection lost"); }
+    return Response.json([]);
+  }) as typeof fetch;
+  const gh = new GitHub("a/b", "fake", transport);
+  await expect(gh.create("Example", "marker", [], "key")).rejects.toThrow("connection lost");
+  await expect(gh.create("Example", "marker", [], "key")).rejects.toThrow("uncertain");
+  expect(writes).toBe(1);
+});
+
+test("QA source links are pinned to the inspected revision and nonexistent files are omitted", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "eyes-links-"));
+  try {
+    await Bun.write(path.join(workspace, "package.json"), "{}\n");
+    const reply = await groundReplyLinks("[依赖](https://github.com/a/b/blob/dev/package.json) https://github.com/a/b/blob/dev/package.", { workspace, repository: "a/b", sha: "a".repeat(40), branch: "dev" });
+    expect(reply).toContain(`/blob/${"a".repeat(40)}/package.json`);
+    expect(reply).not.toContain("/blob/dev/");
+    expect(reply).toContain("源码链接未通过校验");
+  } finally { await rm(workspace, { recursive: true, force: true }); }
 });

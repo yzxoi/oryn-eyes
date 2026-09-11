@@ -4,6 +4,28 @@ import type { IssueDraft } from "./contracts";
 function publicText(value: string) {
   return value.replace(/<!--[\s\S]*?-->/g, "").replace(/@(?!\[)/g, "＠");
 }
+export async function groundReplyLinks(reply: string, context: { workspace: string; repository: string; sha: string; branch: string }) {
+  const prefix = `https://github.com/${context.repository}/blob/`;
+  const urls = [...new Set(reply.match(/https:\/\/github\.com\/[^\s)\]}>，。；]+/g) ?? [])];
+  for (const link of urls) {
+    if (!link.startsWith(prefix)) continue;
+    const url = new URL(link);
+    const suffix = url.pathname.slice(new URL(prefix).pathname.length);
+    const ref = suffix.startsWith(context.branch + "/") ? context.branch : suffix.split("/")[0]!;
+    if (ref !== context.branch && !(/^[a-f0-9]{7,40}$/.test(ref) && context.sha.startsWith(ref))) continue;
+    let relative = "";
+    try { relative = decodeURIComponent(suffix.slice(ref.length + 1)); } catch { /* Invalid paths are omitted. */ }
+    const full = path.resolve(context.workspace, relative);
+    const valid = Boolean(relative) && full.startsWith(path.resolve(context.workspace) + path.sep) && await Bun.file(full).exists();
+    if (!valid) {
+      reply = reply.replaceAll(`](${link})`, "]（源码链接未通过校验）").replaceAll(link, "（源码链接未通过校验，已省略）");
+      continue;
+    }
+    const normalized = `${prefix}${context.sha}/${relative.split("/").map(encodeURIComponent).join("/")}${url.hash}`;
+    reply = reply.replaceAll(link, normalized);
+  }
+  return reply;
+}
 export async function validateFacts(issue: IssueDraft, workspace: string) {
   for (const fact of issue.facts) {
     const full = path.resolve(workspace, fact.path);

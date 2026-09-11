@@ -40,6 +40,20 @@ class OrynEyesPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
+        components = getattr(event.message_obj, "message", []) or []
+        bot_id = str(event.get_self_id())
+        handled = str(event.get_sender_id()) != bot_id and (
+            event.is_private_chat() or any(c.__class__.__name__ == "At" and str(getattr(c, "qq", "")) == bot_id for c in components)
+        )
+        try:
+            async for result in self._on_message(event):
+                yield result
+        finally:
+            # AstrBot stops consuming yielded replies when an event is stopped.
+            if handled:
+                event.stop_event()
+
+    async def _on_message(self, event: AstrMessageEvent):
         obj = event.message_obj
         components = getattr(obj, "message", []) or []
         conversation = str(event.unified_msg_origin)
@@ -57,7 +71,6 @@ class OrynEyesPlugin(Star):
             if text or images:
                 self.recent.add(conversation, sender, text, images)
             return
-        event.stop_event()
         text = re.sub(r"<at[^>]*>.*?</at>|<at[^>]*>|\[CQ:at[^\]]*\]", "", text).strip()
         if not text and not images:
             yield event.chain_result([Plain("👁️ 我在。可以描述遇到的问题，或附上截图；我会答疑、查已有记录，必要时直接创建 YourTJ-Hub Issue。")])

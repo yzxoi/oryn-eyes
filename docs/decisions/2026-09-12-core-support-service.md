@@ -12,8 +12,16 @@ The result schema separates a user's report, source-supported facts, hypotheses,
 
 Provider output is schema-validated, including when one valid JSON object is wrapped in prose. Multiple conflicting valid objects are rejected. Format correction is bounded by the same task deadline, and its failure reason is logged without the model output. Same-sender tasks are serialized; other senders can run concurrently. Brief status-poll failures are retried without resubmitting the task.
 
+Deployment probes showed redundant source downloads dominating some short QA tasks. The GitHub client therefore shares one in-memory archive promise per immutable commit for five minutes, while still resolving the current branch and extracting an isolated workspace for every request. Live publication verification uses generated images and a labelled, immediately closed Issue protected by the existing Oryn hold label.
+
 Screenshot publication uses a content-addressed file on a dedicated repository branch. Screenshots are not stored in a local long-term archive. Stable public assets belong to the GitHub feedback record. No raw QQ identities are included in public records.
 
 Delivery uses an authenticated local API, non-destructive status polling, bounded queues, sender-scoped cancellation and ephemeral deduplication. The Issue marker allows recovery of ambiguous writes from recent Issues; exactly-once messaging across arbitrary outages is outside this design. No blind retry of a write is allowed.
+
+Live GitHub verification demonstrated that an immediately created Issue can be absent from a subsequent list response. Successful publication results and concurrent publication promises therefore stay in memory for 30 minutes. An ambiguous write is fenced from another POST until its marker is recovered; read-side lag must not turn a retry into a duplicate. Regression tests simulate both stale lists and lost write responses.
+
+The deployed AstrBot scheduler stops iterating a plugin generator as soon as an event is marked stopped. The bridge therefore stops propagation only after all receipt/progress/result yields have been consumed. A behavioral test mirrors this scheduler rule, including image-only input, so an early stop cannot silently prevent forwarding.
+
+QA source links for the inspected branch are checked against the task workspace and pinned to its immutable revision. Nonexistent file links are omitted with an explicit qualification rather than forwarding a broken citation. Image normalization clears retained metadata before encoding; a real Pillow test verifies EXIF removal and bounded dimensions.
 
 Validation: behavioral tests cover message/image validation, sender context isolation, cancellation, publication recovery and source citation validation. Real Core smoke checks provider-bound image bytes, file and gateway tools, and interleaved reasoning. Live provider and deployed service probes are documented in delivery evidence rather than committed raw logs.
