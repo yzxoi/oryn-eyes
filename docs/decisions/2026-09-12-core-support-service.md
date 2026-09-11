@@ -12,6 +12,8 @@ The result schema separates a user's report, source-supported facts, hypotheses,
 
 Provider output is schema-validated, including when one valid JSON object is wrapped in prose. Multiple conflicting valid objects are rejected. Format correction is bounded by the same task deadline, and its failure reason is logged without the model output. Same-sender tasks are serialized; other senders can run concurrently. Brief status-poll failures are retried without resubmitting the task.
 
+Deployment probes showed redundant source downloads dominating some short QA tasks. The GitHub client therefore shares one in-memory archive promise per immutable commit for five minutes, while still resolving the current branch and extracting an isolated workspace for every request. Live publication verification uses generated images and a labelled, immediately closed Issue protected by the existing Oryn hold label.
+
 Screenshot publication uses a content-addressed file on a dedicated repository branch. Screenshots are not stored in a local long-term archive. Stable public assets belong to the GitHub feedback record. No raw QQ identities are included in public records.
 
 Delivery uses an authenticated local API, non-destructive status polling, bounded queues, sender-scoped cancellation and ephemeral deduplication. The Issue marker allows recovery of ambiguous writes from recent Issues; exactly-once messaging across arbitrary outages is outside this design. No blind retry of a write is allowed.

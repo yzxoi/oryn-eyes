@@ -30,3 +30,12 @@ test("ambiguous create failure recovers the existing issue without replaying POS
   expect((await gh.create("Example", result.body, [], "key")).number).toBe(7);
   expect(writes).toBe(1);
 });
+
+test("concurrent tasks share one download for the same immutable source revision", async () => {
+  let requests = 0;
+  const transport = (async (_input: unknown) => { requests++; await Bun.sleep(2); return new Response("archive fixture"); }) as typeof fetch;
+  const gh = new GitHub("a/b", "fake", transport);
+  const [a, b] = await Promise.all([gh.archive("a".repeat(40)), gh.archive("a".repeat(40))]);
+  expect(a).toEqual(b); expect(requests).toBe(1);
+  await gh.archive("b".repeat(40)); expect(requests).toBe(2);
+});

@@ -41,6 +41,8 @@ bun run smoke
 
 The smoke test verifies **actual provider-bound image bytes**, source reading, GitHub gateway tool access, and reasoning continuation using the real Core. `bun script/smoke.ts --live` additionally calls the configured official GLM endpoint using `ORYN_API_KEY`.
 
+`bun script/publication-smoke.ts --live-write` is an explicit live-write probe: it uploads a generated image, verifies anonymous image access, creates a clearly labelled verification Issue with the existing Oryn hold label, verifies duplicate recovery, and closes that same Issue. It never uses real QQ messages or screenshots.
+
 ## Deployment
 
 CI builds a Linux x64 bundle containing Core, the application, a baseline Bun binary suitable for small x86 machines, and ripgrep. Python 3 is required for safe source extraction. Install the bundle under `~/oryn-eyes` and the unit from `deploy/oryn-eyes.service` under `~/.config/systemd/user/`.
@@ -85,6 +87,6 @@ The task budget bounds the whole task. Provider request timeouts use the remaini
 
 ## State and limits
 
-Only necessary redacted service diagnostics remain locally. Model sessions, source snapshots and images are temporary. Credentials and installed code are deployment inputs, not memory. Message deduplication and status are in memory for 30 minutes; published Issues carry an opaque marker so repeated deliveries can recover a prior creation from recent Issues. No promise of exactly-once delivery across arbitrary outages is made: ambiguous GitHub writes are checked before any retry, and automatic blind write retries are prohibited.
+Only necessary redacted service diagnostics remain locally. Model sessions, source snapshots and images are temporary. Concurrent tasks share an in-memory source archive for at most five minutes, keyed by the exact commit; each task still gets its own extracted workspace. Credentials and installed code are deployment inputs, not memory. Message deduplication and status are in memory for 30 minutes; published Issues carry an opaque marker so repeated deliveries can recover a prior creation from recent Issues. No promise of exactly-once delivery across arbitrary outages is made: ambiguous GitHub writes are checked before any retry, and automatic blind write retries are prohibited.
 
 See [the decision record](docs/decisions/2026-09-12-core-support-service.md) and [upstream provenance](NOTICE.md).

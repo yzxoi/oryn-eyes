@@ -66,7 +66,8 @@ export async function startService(settings: Settings, options: { analyze?: type
       if (["known_issue", "create_issue"].includes(result.action) && gateway.searches === 0) throw new Error("No successful GitHub search evidence was collected");
       if (result.action === "known_issue") {
         const existing = await github.issue(result.existingIssue!); check();
-        job.reply = `${publicReply(result.reply, original)}\n🔗 ${existing.html_url}`; job.issueUrl = existing.html_url;
+        const reply = publicReply(result.reply, original);
+        job.reply = reply.includes(existing.html_url) ? reply : `${reply}\n🔗 ${existing.html_url}`; job.issueUrl = existing.html_url;
       } else if (result.action === "create_issue") {
         const issue = result.issue!;
         await validateFacts(issue, work.workspace);

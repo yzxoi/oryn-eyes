@@ -9,6 +9,7 @@ export class GitHubError extends Error {
   constructor(public status: number, message: string) { super(message); this.name = "GitHubError"; }
 }
 export class GitHub {
+  private cachedArchive?: { sha: string; promise: Promise<Uint8Array> };
   constructor(readonly repository: string, private token: string, private transport: typeof fetch = fetch) {}
 
   async api(endpoint: string, method = "GET", body?: unknown): Promise<unknown> {
@@ -90,6 +91,16 @@ export class GitHub {
   }
 
   async archive(sha: string): Promise<Uint8Array> {
+    if (this.cachedArchive?.sha === sha) return this.cachedArchive.promise;
+    const entry = { sha, promise: this.downloadArchive(sha) };
+    this.cachedArchive = entry;
+    const timer = setTimeout(() => { if (this.cachedArchive === entry) this.cachedArchive = undefined; }, 5 * 60_000);
+    timer.unref();
+    try { return await entry.promise; }
+    catch (error) { if (this.cachedArchive === entry) this.cachedArchive = undefined; throw error; }
+  }
+
+  private async downloadArchive(sha: string): Promise<Uint8Array> {
     const response = await this.transport(`https://api.github.com/repos/${this.repository}/tarball/${sha}`, {
       headers: { Authorization: `Bearer ${this.token}`, "User-Agent": "oryn-eyes" }, signal: AbortSignal.timeout(120_000),
     });
