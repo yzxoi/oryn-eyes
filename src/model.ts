@@ -26,6 +26,6 @@ export function modelDefinition(
     ...(modelID.startsWith("deepseek-")
       ? { interleaved: { field: "reasoning_content" } }
       : {}),
-    options: { ...reasoning },
+    options: { response_format: { type: "json_object" }, ...reasoning },
   };
 }
