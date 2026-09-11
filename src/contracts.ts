@@ -56,7 +56,25 @@ export const Analysis = z.object({
 });
 export type Analysis = z.infer<typeof Analysis>;
 export function parseAnalysis(text: string): Analysis {
-  return Analysis.parse(JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
+  const normalized = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try { return Analysis.parse(JSON.parse(normalized)); } catch { /* Some providers wrap the final JSON in a prose preamble. */ }
+  const candidates: Analysis[] = [];
+  let start = -1, depth = 0, quoted = false, escaped = false;
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized[i];
+    if (start < 0) { if (char === "{") { start = i; depth = 1; } continue; }
+    if (escaped) { escaped = false; continue; }
+    if (quoted && char === "\\") { escaped = true; continue; }
+    if (char === '"') { quoted = !quoted; continue; }
+    if (quoted) continue;
+    if (char === "{") depth++;
+    if (char === "}" && --depth === 0) {
+      try { candidates.push(Analysis.parse(JSON.parse(normalized.slice(start, i + 1)))); } catch { /* Ignore unrelated JSON objects. */ }
+      start = -1;
+    }
+  }
+  if (candidates.length !== 1) throw new Error(`Expected one valid support result, found ${candidates.length}`);
+  return candidates[0]!;
 }
 export function messageKey(message: Incoming, repository: string) {
   return createHash("sha256").update(JSON.stringify([repository, message.conversation, message.messageId])).digest("hex");

@@ -89,7 +89,7 @@ class OrynEyesPlugin(Star):
             bot = getattr(event, "bot", None)
             if reply_id and bot and hasattr(bot, "api"):
                 try:
-                    parent = await bot.api.call_action("get_msg", message_id=int(reply_id))
+                    parent = await asyncio.wait_for(bot.api.call_action("get_msg", message_id=int(reply_id)), timeout=10)
                     parent = parent.get("data", parent)
                     for segment in parent.get("message", []):
                         if not isinstance(segment, dict):
@@ -104,7 +104,10 @@ class OrynEyesPlugin(Star):
 
         sources = [(url, "当前消息或明确引用的截图") for url in images]
         sources += [(url, "同一用户近期消息中的截图，可能与本次追问相关") for e in previous for url in e["images"]]
-        sources = list(dict.fromkeys(sources))[:6]
+        unique_sources = {}
+        for url, context in sources:
+            unique_sources.setdefault(url, context)
+        sources = list(unique_sources.items())[:6]
         attachments = []
         failed_images = 0
         for index, (url, context) in enumerate(sources):
@@ -127,9 +130,17 @@ class OrynEyesPlugin(Star):
             self.active[key] = job_id
             start = time.monotonic()
             progress_sent = False
+            poll_failures = 0
             while time.monotonic() - start < self.budget + 60:
                 await asyncio.sleep(2)
-                state = await asyncio.to_thread(api, self.base, self.token, f"/v1/jobs/{job_id}")
+                try:
+                    state = await asyncio.to_thread(api, self.base, self.token, f"/v1/jobs/{job_id}")
+                    poll_failures = 0
+                except Exception:
+                    poll_failures += 1
+                    if poll_failures >= 3:
+                        raise
+                    continue
                 if state["status"] in ("completed", "failed", "cancelled"):
                     reply = state.get("reply") or "⚠️ 本次处理结束，但没有可发送的结果。"
                     self.recent.add(conversation, sender, reply, [], role="assistant")

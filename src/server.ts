@@ -45,7 +45,7 @@ export async function startService(settings: Settings, options: { analyze?: type
     let work: Awaited<ReturnType<typeof prepareWorkspace>> | undefined;
     let gateway: ReturnType<typeof readGateway> | undefined;
     const deadline = job.created + settings.budget * 1000;
-    const timer = setTimeout(() => job.controller.abort(new Error("Task budget exhausted")), settings.budget * 1000);
+    const timer = setTimeout(() => job.controller.abort(new Error("Task budget exhausted")), Math.max(1, deadline - Date.now()));
     const check = () => { if (Date.now() >= deadline) job.controller.abort(new Error("Task budget exhausted")); job.controller.signal.throwIfAborted(); };
     try {
       check();
