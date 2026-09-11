@@ -39,3 +39,28 @@ test("concurrent tasks share one download for the same immutable source revision
   expect(a).toEqual(b); expect(requests).toBe(1);
   await gh.archive("b".repeat(40)); expect(requests).toBe(2);
 });
+
+test("stale GitHub issue lists cannot cause duplicate successful publication", async () => {
+  let writes = 0;
+  const transport = (async (_input: unknown, init?: RequestInit) => {
+    if (init?.method === "POST") { writes++; return Response.json({ number: writes, title: "Example", body: "marker", state: "open", html_url: `https://github.com/a/b/issues/${writes}` }); }
+    return Response.json([]);
+  }) as typeof fetch;
+  const gh = new GitHub("a/b", "fake", transport);
+  const [a, b] = await Promise.all([gh.create("Example", "marker", [], "key"), gh.create("Example", "marker", [], "key")]);
+  expect(a.number).toBe(b.number);
+  expect((await gh.create("Example", "marker", [], "key")).number).toBe(a.number);
+  expect(writes).toBe(1);
+});
+
+test("an unresolved ambiguous write is fenced against subsequent POST attempts", async () => {
+  let writes = 0;
+  const transport = (async (_input: unknown, init?: RequestInit) => {
+    if (init?.method === "POST") { writes++; throw new Error("connection lost"); }
+    return Response.json([]);
+  }) as typeof fetch;
+  const gh = new GitHub("a/b", "fake", transport);
+  await expect(gh.create("Example", "marker", [], "key")).rejects.toThrow("connection lost");
+  await expect(gh.create("Example", "marker", [], "key")).rejects.toThrow("uncertain");
+  expect(writes).toBe(1);
+});

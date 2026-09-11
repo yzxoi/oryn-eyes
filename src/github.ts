@@ -5,16 +5,18 @@ import type { ImageInput } from "./contracts";
 
 const Issue = z.object({ number: z.number(), title: z.string(), body: z.string().nullable(), state: z.string(), html_url: z.string(), pull_request: z.unknown().optional() });
 export type GitHubIssue = z.infer<typeof Issue>;
+type Publication = { expires: number; pending?: Promise<GitHubIssue>; result?: GitHubIssue; uncertain: boolean };
 export class GitHubError extends Error {
   constructor(public status: number, message: string) { super(message); this.name = "GitHubError"; }
 }
 export class GitHub {
   private cachedArchive?: { sha: string; promise: Promise<Uint8Array> };
+  private publications = new Map<string, Publication>();
   constructor(readonly repository: string, private token: string, private transport: typeof fetch = fetch) {}
 
   async api(endpoint: string, method = "GET", body?: unknown): Promise<unknown> {
     const response = await this.transport(`https://api.github.com${endpoint}`, {
-      method, headers: { Authorization: `Bearer ${this.token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "oryn-eyes", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      method, headers: { Authorization: `Bearer ${this.token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "oryn-eyes", "Cache-Control": "no-cache", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(30_000), redirect: "error",
     });
@@ -46,12 +48,31 @@ export class GitHub {
     return (await this.recent()).find(i => !i.pull_request && i.body?.includes(marker));
   }
   async create(title: string, body: string, labels: string[], key: string) {
+    for (const [id, value] of this.publications) if (value.expires < Date.now()) this.publications.delete(id);
+    const previous = this.publications.get(key);
+    if (previous?.result) return previous.result;
+    if (previous?.pending) return previous.pending;
+    if (previous?.uncertain) {
+      const recovered = await this.findPublished(key);
+      if (recovered) { previous.result = recovered; return recovered; }
+      throw new Error("Previous GitHub write outcome is uncertain; refusing to create a second Issue");
+    }
+    const entry: Publication = { expires: Date.now() + 30 * 60_000, uncertain: false };
+    this.publications.set(key, entry);
+    const pending = this.createOnce(title, body, labels, key, entry);
+    entry.pending = pending;
+    try { const result = await pending; entry.result = result; return result; }
+    finally { entry.pending = undefined; if (!entry.result && !entry.uncertain) this.publications.delete(key); }
+  }
+
+  private async createOnce(title: string, body: string, labels: string[], key: string, entry: Publication) {
     const existing = await this.findPublished(key);
     if (existing) return existing;
     try {
       return Issue.parse(await this.api(`/repos/${this.repository}/issues`, "POST", { title, body, labels }));
     } catch (error) {
       // A failed HTTP response can follow a successful write; never blindly replay it.
+      entry.uncertain = !(error instanceof GitHubError && error.status >= 400 && error.status < 500);
       const recovered = await this.findPublished(key).catch(() => undefined);
       if (recovered) return recovered;
       throw error;

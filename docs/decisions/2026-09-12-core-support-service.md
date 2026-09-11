@@ -18,4 +18,6 @@ Screenshot publication uses a content-addressed file on a dedicated repository b
 
 Delivery uses an authenticated local API, non-destructive status polling, bounded queues, sender-scoped cancellation and ephemeral deduplication. The Issue marker allows recovery of ambiguous writes from recent Issues; exactly-once messaging across arbitrary outages is outside this design. No blind retry of a write is allowed.
 
+Live GitHub verification demonstrated that an immediately created Issue can be absent from a subsequent list response. Successful publication results and concurrent publication promises therefore stay in memory for 30 minutes. An ambiguous write is fenced from another POST until its marker is recovered; read-side lag must not turn a retry into a duplicate. Regression tests simulate both stale lists and lost write responses.
+
 Validation: behavioral tests cover message/image validation, sender context isolation, cancellation, publication recovery and source citation validation. Real Core smoke checks provider-bound image bytes, file and gateway tools, and interleaved reasoning. Live provider and deployed service probes are documented in delivery evidence rather than committed raw logs.

@@ -35,15 +35,16 @@ for (let attempt = 0; attempt < 3; attempt++) {
 assert.ok(publiclyReadable, "Screenshot must be readable without credentials and match the original bytes");
 const key = crypto.randomUUID().replaceAll("-", "");
 const issue = IssueDraft.parse({ kind: "docs", title: "test: Oryn Eyes 链路验收（非产品问题）", description: "这是部署 Oryn Eyes 时执行的自动化验收，不是用户 Bug 或功能需求。用于验证标准正文、公开截图、GitHub 建单与重复投递恢复。验收脚本会立即关闭本条记录。", environment: "自动化验收环境；无真实用户数据", steps: ["上传自动生成的纯色图片", "创建带有暂停标签的验收单", "重复提交同一投递标记，确认复用原 Issue", "关闭验收单"], expected: "图片可匿名读取；重复投递只生成一个 Issue。", actual: "由验收脚本校验后报告结果。", screenshotIds: ["verification"] });
-let number: number | undefined;
+const numbers = new Set<number>();
 try {
   const body = renderIssue(issue, { repository, sha, key, images: [image], searches: 0 });
-  const created = await gh.create(issue.title, body, [hold.name, "👁️ oryn-eyes"], key); number = created.number;
+  const created = await gh.create(issue.title, body, [hold.name, "👁️ oryn-eyes"], key); numbers.add(created.number);
   const repeated = await gh.create(issue.title, body, [hold.name, "👁️ oryn-eyes"], key);
+  numbers.add(repeated.number);
   assert.equal(repeated.number, created.number);
   console.log(JSON.stringify({ passed: true, issue: created.html_url, publicImage: true, duplicateReused: true, holdLabel: hold.name }));
 } finally {
-  if (number) {
+  for (const number of numbers) {
     await gh.api(`/repos/${repository}/issues/${number}`, "PATCH", { state: "closed", state_reason: "not_planned" });
     console.log(JSON.stringify({ verificationIssueClosed: number }));
   }
