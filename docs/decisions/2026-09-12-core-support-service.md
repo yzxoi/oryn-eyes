@@ -22,4 +22,6 @@ Live GitHub verification demonstrated that an immediately created Issue can be a
 
 The deployed AstrBot scheduler stops iterating a plugin generator as soon as an event is marked stopped. The bridge therefore stops propagation only after all receipt/progress/result yields have been consumed. A behavioral test mirrors this scheduler rule, including image-only input, so an early stop cannot silently prevent forwarding.
 
+QA source links for the inspected branch are checked against the task workspace and pinned to its immutable revision. Nonexistent file links are omitted with an explicit qualification rather than forwarding a broken citation. Image normalization clears retained metadata before encoding; a real Pillow test verifies EXIF removal and bounded dimensions.
+
 Validation: behavioral tests cover message/image validation, sender context isolation, cancellation, publication recovery and source citation validation. Real Core smoke checks provider-bound image bytes, file and gateway tools, and interleaved reasoning. Live provider and deployed service probes are documented in delivery evidence rather than committed raw logs.

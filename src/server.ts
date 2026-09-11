@@ -11,7 +11,7 @@ import { prepareWorkspace } from "./workspace";
 import { readGateway } from "./gateway";
 import { supportPrompt } from "./prompt";
 import { runHarness } from "./runner";
-import { renderIssue, validateFacts } from "./render";
+import { renderIssue, validateFacts, groundReplyLinks } from "./render";
 
 export function authorized(request: Request, secret: string) {
   const a = Buffer.from(request.headers.get("authorization") || ""), b = Buffer.from(`Bearer ${secret}`);
@@ -63,6 +63,7 @@ export async function startService(settings: Settings, options: { analyze?: type
       const budget = Math.max(1, Math.floor((deadline - Date.now()) / 1000));
       const result = await analyze({ ...settings, budget }, work.workspace, supportPrompt(message, { repository: settings.repository, sha: work.sha, branch: work.branch, gateway: gateway.url }), message.images, gateway.url, job.controller.signal);
       check();
+      result.reply = await groundReplyLinks(result.reply, { workspace: work.workspace, repository: settings.repository, sha: work.sha, branch: work.branch });
       if (["known_issue", "create_issue"].includes(result.action) && gateway.searches === 0) throw new Error("No successful GitHub search evidence was collected");
       if (result.action === "known_issue") {
         const existing = await github.issue(result.existingIssue!); check();

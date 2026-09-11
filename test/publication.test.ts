@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { IssueDraft } from "../src/contracts";
-import { renderIssue, validateFacts } from "../src/render";
+import { renderIssue, validateFacts, groundReplyLinks } from "../src/render";
 import { GitHub } from "../src/github";
 
 test("fact citations require a matching source quote and cannot escape workspace", async () => {
@@ -63,4 +63,15 @@ test("an unresolved ambiguous write is fenced against subsequent POST attempts",
   await expect(gh.create("Example", "marker", [], "key")).rejects.toThrow("connection lost");
   await expect(gh.create("Example", "marker", [], "key")).rejects.toThrow("uncertain");
   expect(writes).toBe(1);
+});
+
+test("QA source links are pinned to the inspected revision and nonexistent files are omitted", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "eyes-links-"));
+  try {
+    await Bun.write(path.join(workspace, "package.json"), "{}\n");
+    const reply = await groundReplyLinks("[依赖](https://github.com/a/b/blob/dev/package.json) https://github.com/a/b/blob/dev/package.", { workspace, repository: "a/b", sha: "a".repeat(40), branch: "dev" });
+    expect(reply).toContain(`/blob/${"a".repeat(40)}/package.json`);
+    expect(reply).not.toContain("/blob/dev/");
+    expect(reply).toContain("源码链接未通过校验");
+  } finally { await rm(workspace, { recursive: true, force: true }); }
 });

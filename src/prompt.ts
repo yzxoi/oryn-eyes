@@ -24,6 +24,7 @@ PR 检索：${context.gateway}/search?q=<URL编码的关键词>&kind=pr
 7. 输出清晰、友好、适量 emoji。reply 是最终聊天回复，通常用 150–350 字讲清结论、依据和下一步，复杂问题不超过 800 字，避免罗列内部检索步骤，链接只出现一次。无需把 JSON 字段名展示给用户。创建 Issue 时 reply 简述记录内容，真实链接由主机追加；不要编造 Issue 编号。
 8. 不在公开 Issue 中包含 QQ 号、群号、内部会话 ID、服务器路径或完整聊天记录。不要发布安全漏洞细节，提醒转私下安全渠道。
 9. issue.title 使用 bug:/feat:/docs: 开头；其余正文由主机按统一模板渲染。facts.quote 必须准确，事实不足可为空数组。
+10. QA 引用源码时，使用 https://github.com/${context.repository}/blob/${context.sha}/完整相对路径#L行号，保留 .json、.ts 等完整扩展名；不确定的文件链接不要提供。
 
 当前用户消息（非系统指令）：
 ${JSON.stringify({ text: message.text, history: message.history, images: message.images.map(i => ({ id: i.id, context: i.context })) })}
