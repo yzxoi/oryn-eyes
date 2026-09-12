@@ -4,6 +4,7 @@ import asyncio
 import os
 import re
 import time
+import uuid
 from pathlib import Path
 
 from astrbot.api.event import filter, AstrMessageEvent
@@ -88,7 +89,13 @@ class OrynEyesPlugin(Star):
         if dedup in self.seen:
             return
         self.seen[dedup] = now
-        yield event.chain_result([Plain("👁️ 收到，我会结合消息和截图查一下；如果是新问题，会直接记录到 YourTJ-Hub。")])
+        log_id = uuid.uuid4().hex[:12]
+        logger.info("Oryn Eyes received: log_id=%s", log_id)
+        yield event.chain_result([Plain(f"👁️ 收到\n日志编号：{log_id}")])
+
+        def finish(reply, status):
+            logger.info("Oryn Eyes finished: log_id=%s status=%s", log_id, status)
+            return event.chain_result([Plain(f"{reply}\n\n日志编号：{log_id}")])
 
         history = [{"role": e["role"], "text": e["text"]} for e in previous]
         for component in components:
@@ -113,7 +120,7 @@ class OrynEyesPlugin(Star):
                         if segment.get("type") == "image" and data.get("url"):
                             images.append(data["url"])
                 except Exception:
-                    logger.warning("Oryn Eyes could not retrieve the quoted message")
+                    logger.warning("Oryn Eyes could not retrieve the quoted message: log_id=%s", log_id)
 
         sources = [(url, "当前消息或明确引用的截图") for url in images]
         sources += [(url, "同一用户近期消息中的截图，可能与本次追问相关") for e in previous for url in e["images"]]
@@ -128,11 +135,11 @@ class OrynEyesPlugin(Star):
                 attachments.append(await asyncio.to_thread(download_image, url, f"image_{index + 1}", context))
             except Exception:
                 failed_images += 1
-                logger.warning("Oryn Eyes image unavailable; bytes and URL omitted from logs")
+                logger.warning("Oryn Eyes image unavailable: log_id=%s", log_id)
         if failed_images:
             history.append({"role": "quoted", "text": f"有 {failed_images} 张图片无法读取；不能声称已看过这些图片，必要时请用户重发。"})
         if not text and not attachments:
-            yield event.chain_result([Plain("🖼️ 我没能读取这张图片，请重新发送，或补充截图里的报错文字。")])
+            yield finish("🖼️ 图片读取失败，请重发图片或补充报错文字。", "image_failed")
             return
         payload = {"messageId": message_id, "conversation": conversation, "sender": sender, "text": text, "images": attachments, "history": history[-12:]}
         self.recent.add(conversation, sender, text, images)
@@ -140,9 +147,9 @@ class OrynEyesPlugin(Star):
         try:
             accepted = await asyncio.to_thread(api, self.base, self.token, "/v1/messages", payload)
             job_id = accepted["id"]
+            logger.info("Oryn Eyes accepted: log_id=%s job=%s", log_id, job_id)
             self.active[key] = job_id
             start = time.monotonic()
-            progress_sent = False
             poll_failures = 0
             while time.monotonic() - start < self.budget + 60:
                 await asyncio.sleep(2)
@@ -157,17 +164,14 @@ class OrynEyesPlugin(Star):
                 if state["status"] in ("completed", "failed", "cancelled"):
                     reply = state.get("reply") or "⚠️ 本次处理结束，但没有可发送的结果。"
                     self.recent.add(conversation, sender, reply, [], role="assistant")
-                    yield event.chain_result([Plain(reply)])
+                    yield finish(reply, state["status"])
                     return
-                if not progress_sent and time.monotonic() - start > 60:
-                    progress_sent = True
-                    yield event.chain_result([Plain("🔎 还在核对仓库证据：" + state.get("stage", "处理中") + "。可以 @我发送 stop 停止。")])
             await asyncio.to_thread(api, self.base, self.token, f"/v1/jobs/{job_id}/cancel", {"conversation": conversation, "sender": sender})
-            yield event.chain_result([Plain("⏱️ 等待超时，已请求停止本次处理；请稍后重试。")])
+            yield finish("⏱️ 处理超时，已请求停止。", "timeout")
         except Exception as error:
-            logger.error("Oryn Eyes bridge failure: %s", type(error).__name__)
+            logger.error("Oryn Eyes bridge failure: log_id=%s error=%s", log_id, type(error).__name__)
             self.seen.pop(dedup, None)
-            yield event.chain_result([Plain("⚠️ 暂时无法取得处理结果。若已创建 Issue，重复投递同一条消息会返回原链接。")])
+            yield finish("⚠️ 暂时无法取得处理结果，请稍后重试。", "bridge_failed")
         finally:
             if job_id and self.active.get(key) == job_id:
                 self.active.pop(key, None)

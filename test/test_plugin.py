@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import re
 from pathlib import Path
 import sys
 import tempfile
@@ -61,22 +62,53 @@ class PluginTest(unittest.IsolatedAsyncioTestCase):
             token.write("test-token"); token.flush()
             with patch.dict(os.environ, {"ORYN_EYES_TOKEN_FILE": token.name}): plugin = module.OrynEyesPlugin(None)
         payloads = []
+        clock = [0]
+        polls = [0]
         def api(_base, _token, route, payload=None):
             if route == "/v1/messages": payloads.append(payload); return {"id": "job"}
-            return {"status": "completed", "reply": "验收通过"}
+            polls[0] += 1
+            return {"status": "running", "stage": "分析中"} if polls[0] == 1 else {"status": "completed", "reply": "验收通过"}
         async def call(fn, *args): return fn(*args)
+        async def sleep(_seconds): clock[0] += 80
         event = Event()
         replies = []
-        with patch.object(module, "api", api), patch.object(module, "download_image", lambda *a: {"id": "image_1", "mime": "image/png", "data": "fixture", "context": "current"}), patch.object(module.asyncio, "to_thread", call), patch.object(module.asyncio, "sleep", AsyncMock()):
+        with patch.object(module, "api", api), patch.object(module, "download_image", lambda *a: {"id": "image_1", "mime": "image/png", "data": "fixture", "context": "current"}), patch.object(module.asyncio, "to_thread", call), patch.object(module.asyncio, "sleep", sleep), patch.object(module.time, "monotonic", lambda: clock[0]), patch.object(module.logger, "info") as logged:
             async for result in plugin.on_message(event):
                 if event.stopped: break  # Mirrors AstrBot's real scheduler.
                 replies.extend(p.text for p in result)
         self.assertEqual(len(replies), 2)
-        self.assertIn("收到", replies[0])
-        self.assertEqual(replies[1], "验收通过")
+        self.assertRegex(replies[0], r"^👁️ 收到\n日志编号：[0-9a-f]{12}$")
+        log_id = replies[0].split("日志编号：")[1]
+        self.assertEqual(replies[1], "验收通过\n\n日志编号：" + log_id)
+        self.assertTrue(any(log_id in call.args and "job" in call.args for call in logged.call_args_list))
         self.assertEqual(len(payloads), 1)
         self.assertEqual(len(payloads[0]["images"]), 1)
         self.assertTrue(event.stopped)
+
+    async def test_failures_also_close_the_receipt_with_the_same_id(self):
+        for scenario in ("failed", "cancelled", "unavailable", "image_failed", "timeout"):
+            with self.subTest(scenario=scenario):
+                module = load_plugin()
+                with tempfile.NamedTemporaryFile(mode="w") as token:
+                    token.write("test-token"); token.flush()
+                    with patch.dict(os.environ, {"ORYN_EYES_TOKEN_FILE": token.name}): plugin = module.OrynEyesPlugin(None)
+                clock = [0]
+                def api(_base, _token, route, payload=None):
+                    if scenario == "unavailable": raise ConnectionError("fixture")
+                    if route == "/v1/messages": return {"id": "job"}
+                    return {"status": scenario, "reply": "已结束"}
+                def image(*args):
+                    if scenario == "image_failed": raise ValueError("fixture")
+                    return {"id": "image_1", "mime": "image/png", "data": "fixture", "context": "current"}
+                async def call(fn, *args): return fn(*args)
+                async def sleep(_seconds): clock[0] += 1000
+                event = Event()
+                with patch.object(module, "api", api), patch.object(module, "download_image", image), patch.object(module.asyncio, "to_thread", call), patch.object(module.asyncio, "sleep", sleep), patch.object(module.time, "monotonic", lambda: clock[0]):
+                    replies = [part.text async for result in plugin.on_message(event) for part in result]
+                self.assertEqual(len(replies), 2)
+                log_id = re.search(r"日志编号：([0-9a-f]{12})", replies[0]).group(1)
+                self.assertTrue(replies[-1].endswith("日志编号：" + log_id))
+                self.assertTrue(event.stopped)
 
     async def test_unmentioned_group_images_are_context_without_stopping_other_handlers(self):
         module = load_plugin()
