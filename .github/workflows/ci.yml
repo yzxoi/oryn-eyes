@@ -7,7 +7,17 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+            bun-asset: x64-baseline
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            bun-asset: aarch64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -25,12 +35,12 @@ jobs:
       - name: Package Linux deployment
         run: |
           mkdir -p bin dist
-          curl --fail --location --retry 3 https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64-baseline.zip --output dist/bun.zip
+          curl --fail --location --retry 3 https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-${{ matrix.bun-asset }}.zip --output dist/bun.zip
           unzip -j dist/bun.zip '*/bun' -d bin
           cp /usr/bin/rg bin/rg
-          tar -czf dist/oryn-eyes-linux-x64.tar.gz bin src script config deploy astrbot_plugin_oryn_eyes node_modules .runtime package.json bun.lock README.md LICENSE NOTICE.md
+          tar -czf dist/oryn-eyes-linux-${{ matrix.arch }}.tar.gz bin src script config deploy astrbot_plugin_oryn_eyes node_modules .runtime package.json bun.lock README.md LICENSE NOTICE.md
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: oryn-eyes-linux-x64
-          path: dist/oryn-eyes-linux-x64.tar.gz
+          name: oryn-eyes-linux-${{ matrix.arch }}
+          path: dist/oryn-eyes-linux-${{ matrix.arch }}.tar.gz
           retention-days: 7
