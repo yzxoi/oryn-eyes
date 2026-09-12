@@ -19,7 +19,7 @@ export function authorized(request: Request, secret: string) {
 }
 
 export async function startService(settings: Settings, options: { analyze?: typeof runHarness; github?: GitHub; prepare?: typeof prepareWorkspace } = {}) {
-  const github = options.github ?? new GitHub(settings.repository, settings.githubToken);
+  const github = options.github ?? new GitHub(settings.repository, settings.githubToken, fetch, settings.archiveMirror);
   const analyze = options.analyze ?? runHarness;
   const prepare = options.prepare ?? prepareWorkspace;
   const queue = new Queue(settings.concurrency, settings.queueLimit);
@@ -57,7 +57,7 @@ export async function startService(settings: Settings, options: { analyze?: type
       const previous = histories.get(JSON.stringify([original.conversation, original.sender]));
       const history = previous && Date.now() - previous.updated < 30 * 60_000 ? previous.entries : [];
       const message = { ...original, history: [...history, ...original.history].slice(-12) };
-      check(); work = await prepare(github, settings.tempRoot); check();
+      check(); work = await prepare(github, settings.tempRoot, job.controller.signal); check();
       gateway = readGateway(github);
       stage(job, "分析消息、截图与仓库证据");
       const budget = Math.max(1, Math.floor((deadline - Date.now()) / 1000));

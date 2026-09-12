@@ -4,6 +4,7 @@ import { z } from "zod";
 export const Settings = z.object({
   repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
   githubToken: z.string().min(1),
+  archiveMirror: z.string().url().refine(value => { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash; }, "Archive mirror must be an HTTPS prefix without credentials, query, or fragment").optional(),
   apiKey: z.string().min(1),
   bridgeToken: z.string().min(24),
   baseURL: z.string().url().default("https://open.bigmodel.cn/api/coding/paas/v4"),
@@ -21,6 +22,7 @@ export function settingsFromEnv(): Settings {
   return Settings.parse({
     repository: process.env.ORYN_REPOSITORY || "YourTongji/YourTJ-Hub",
     githubToken: process.env.GITHUB_TOKEN,
+    archiveMirror: process.env.ORYN_GITHUB_ARCHIVE_MIRROR || undefined,
     apiKey: process.env.ORYN_API_KEY,
     bridgeToken: process.env.ORYN_BRIDGE_TOKEN,
     baseURL: process.env.ORYN_BASE_URL,

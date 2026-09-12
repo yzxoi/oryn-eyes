@@ -82,6 +82,7 @@ The service binds to loopback and authenticates all message/status/cancel APIs. 
 | `ORYN_CONCURRENCY` | `2` |
 | `ORYN_QUEUE_LIMIT` | `20` |
 | `ORYN_PORT` | `18080` |
+| `ORYN_GITHUB_ARCHIVE_MIRROR` | Unset (official); optional HTTPS prefix, e.g. `https://ghfast.top`, for public source archives only |
 | `ORYN_TEMP_ROOT` | `/tmp/oryn-eyes` |
 | `ORYN_PUBLISH` | `true`; `false` enables analysis without publishing |
 
@@ -92,3 +93,11 @@ The task budget bounds the whole task. Provider request timeouts use the remaini
 Only necessary redacted service diagnostics remain locally. Model sessions, source snapshots and images are temporary. Concurrent tasks share an in-memory source archive for at most five minutes, keyed by the exact commit; each task still gets its own extracted workspace. Credentials and installed code are deployment inputs, not memory. Message deduplication and status are in memory for 30 minutes; published Issues carry an opaque marker so repeated deliveries can recover a prior creation from recent Issues. No promise of exactly-once delivery across arbitrary outages is made: ambiguous GitHub writes are checked before any retry, and automatic blind write retries are prohibited.
 
 See [the decision record](docs/decisions/2026-09-12-core-support-service.md) and [upstream provenance](NOTICE.md).
+
+### Source downloads on slower networks
+
+Source preparation shares the request's total budget (`ORYN_BUDGET_SECONDS`), including cancellation. Concurrent requests reuse a commit's in-flight download; stopping one request leaves other consumers running, while stopping the last consumer aborts the transfer. Completed archives are cached in RAM for five minutes. Extraction retains its 120-second resource limit and also stops when the request is cancelled.
+
+`ORYN_GITHUB_ARCHIVE_MIRROR` is an optional operator-trusted download prefix. Only repositories confirmed public by the official GitHub API use it. The service resolves the commit SHA from GitHub first and downloads that SHA's archive through the prefix; GitHub tokens, API calls, Issue writes, and screenshots never go through it. This trusts the mirror to deliver source faithfully: a SHA in the URL alone does not authenticate archive bytes. Leave it unset for official downloads. Mirror failures fail the request within its budget and appear in service logs.
+
+For a shared Pi, `deploy/raspberry-pi.conf` provides concurrency 1 and temporary workspaces on `/dev/shm`; install it as a user-service drop-in after checking available RAM. Memory limits only work when the kernel enables the memory cgroup controller. AstrBot 4.26 requires Python 3.12 or newer and `astrbot init` in its working directory before enabling its service.
