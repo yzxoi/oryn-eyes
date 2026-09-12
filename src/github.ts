@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { abortable } from "./process";
 import type { IssueDraft } from "./contracts";
 import { validateImage } from "./images";
 import type { ImageInput } from "./contracts";
@@ -10,9 +11,9 @@ export class GitHubError extends Error {
   constructor(public status: number, message: string) { super(message); this.name = "GitHubError"; }
 }
 export class GitHub {
-  private cachedArchive?: { sha: string; promise: Promise<Uint8Array> };
+  private cachedArchive?: { key: string; promise: Promise<Uint8Array>; controller: AbortController; consumers: number; settled: boolean };
   private publications = new Map<string, Publication>();
-  constructor(readonly repository: string, private token: string, private transport: typeof fetch = fetch) {}
+  constructor(readonly repository: string, private token: string, private transport: typeof fetch = fetch, private archiveMirror?: string) {}
 
   async api(endpoint: string, method = "GET", body?: unknown): Promise<unknown> {
     const response = await this.transport(`https://api.github.com${endpoint}`, {
@@ -111,19 +112,42 @@ export class GitHub {
     return { id: image.id, url: `https://raw.githubusercontent.com/${this.repository}/${result.commit.sha}/${file}` };
   }
 
-  async archive(sha: string): Promise<Uint8Array> {
-    if (this.cachedArchive?.sha === sha) return this.cachedArchive.promise;
-    const entry = { sha, promise: this.downloadArchive(sha) };
-    this.cachedArchive = entry;
-    const timer = setTimeout(() => { if (this.cachedArchive === entry) this.cachedArchive = undefined; }, 5 * 60_000);
-    timer.unref();
-    try { return await entry.promise; }
-    catch (error) { if (this.cachedArchive === entry) this.cachedArchive = undefined; throw error; }
+  async archive(sha: string, signal = AbortSignal.timeout(900_000), publicRepository = false): Promise<Uint8Array> {
+    signal.throwIfAborted();
+    const mirror = publicRepository ? this.archiveMirror : undefined;
+    const key = `${sha}:${mirror ?? "official"}`;
+    let entry = this.cachedArchive;
+    if (!entry || entry.key !== key || entry.controller.signal.aborted) {
+      const controller = new AbortController();
+      entry = { key, controller, consumers: 0, settled: false, promise: this.downloadArchive(sha, controller.signal, mirror) };
+      this.cachedArchive = entry;
+      const current = entry;
+      void entry.promise.then(() => {
+        current.settled = true;
+        const timer = setTimeout(() => { if (this.cachedArchive === current) this.cachedArchive = undefined; }, 5 * 60_000);
+        timer.unref();
+      }, () => {
+        current.settled = true;
+        if (this.cachedArchive === current) this.cachedArchive = undefined;
+      });
+    }
+    entry.consumers++;
+    try { return await abortable(entry.promise, signal); }
+    finally {
+      entry.consumers--;
+      if (!entry.consumers && !entry.settled) {
+        entry.controller.abort(signal.reason ?? new Error("Source download has no remaining consumers"));
+        if (this.cachedArchive === entry) this.cachedArchive = undefined;
+      }
+    }
   }
 
-  private async downloadArchive(sha: string): Promise<Uint8Array> {
-    const response = await this.transport(`https://api.github.com/repos/${this.repository}/tarball/${sha}`, {
-      headers: { Authorization: `Bearer ${this.token}`, "User-Agent": "oryn-eyes" }, signal: AbortSignal.timeout(120_000),
+  private async downloadArchive(sha: string, signal: AbortSignal, mirror?: string): Promise<Uint8Array> {
+    const url = mirror
+      ? `${mirror.replace(/\/$/, "")}/https://github.com/${this.repository}/archive/${sha}.tar.gz`
+      : `https://api.github.com/repos/${this.repository}/tarball/${sha}`;
+    const response = await this.transport(url, {
+      headers: { ...(!mirror ? { Authorization: `Bearer ${this.token}` } : {}), "User-Agent": "oryn-eyes" }, signal,
     });
     if (!response.ok || !response.body) throw new Error(`Repository download failed (${response.status})`);
     let size = 0;

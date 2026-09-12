@@ -1,3 +1,13 @@
+export function abortable<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return pending;
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    pending.then(value => { signal.removeEventListener("abort", abort); resolve(value); }, error => { signal.removeEventListener("abort", abort); reject(error); });
+    if (signal.aborted) { signal.removeEventListener("abort", abort); abort(); }
+  });
+}
+
 export async function command(
   args: string[],
   options: {
@@ -5,14 +15,18 @@ export async function command(
     env?: Record<string, string | undefined>;
     timeoutMs?: number;
     trim?: boolean;
+    signal?: AbortSignal;
   } = {},
 ) {
+  options.signal?.throwIfAborted();
   const child = Bun.spawn(args, {
     cwd: options.cwd,
     env: options.env,
     stdout: "pipe",
     stderr: "pipe",
   });
+  const abort = () => child.kill("SIGKILL");
+  options.signal?.addEventListener("abort", abort, { once: true });
   const timer = setTimeout(
     () => child.kill("SIGKILL"),
     options.timeoutMs ?? 120_000,
@@ -23,11 +37,13 @@ export async function command(
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
     ]);
+    options.signal?.throwIfAborted();
     if (code)
       throw new Error(`${args[0]} failed (${code}): ${stderr.slice(-4000)}`);
     return options.trim === false ? stdout : stdout.trim();
   } finally {
     clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abort);
   }
 }
 
