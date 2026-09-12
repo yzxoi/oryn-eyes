@@ -45,7 +45,9 @@ The smoke test verifies **actual provider-bound image bytes**, source reading, G
 
 ## Deployment
 
-CI builds a Linux x64 bundle containing Core, the application, a baseline Bun binary suitable for small x86 machines, and ripgrep. Python 3 is required for safe source extraction. Install the bundle under `~/oryn-eyes` and the unit from `deploy/oryn-eyes.service` under `~/.config/systemd/user/`.
+CI builds and smoke-tests separate Linux x64 and ARM64 bundles containing Core, the application, Bun, and ripgrep. The x64 bundle uses baseline Bun for small x86 machines; ARM64 uses native Bun and a natively compiled Core sandbox helper. Select the bundle matching `uname -m`; do not copy installed dependencies or executable files between architectures. Python 3 is required for safe source extraction. Install the bundle under `~/oryn-eyes` and the unit from `deploy/oryn-eyes.service` under `~/.config/systemd/user/`.
+
+On a shared Raspberry Pi, start with `ORYN_CONCURRENCY=1` in a systemd drop-in and retain the service memory limit. Build packages in CI, keep task data temporary, and bound journal size. Enable user lingering when using user services so they start at boot without an interactive login. Verify QQ login status as well as the OneBot connection: a connected reverse WebSocket does not mean the QQ account is online. A migration may require scanning a new QQ login code.
 
 Keep credentials outside the checkout in `~/.config/oryn-eyes/`, directory mode `0700`, files `0600`:
 
