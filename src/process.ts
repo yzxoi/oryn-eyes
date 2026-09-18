@@ -16,12 +16,14 @@ export async function command(
     timeoutMs?: number;
     trim?: boolean;
     signal?: AbortSignal;
+    stdin?: Uint8Array;
   } = {},
 ) {
   options.signal?.throwIfAborted();
   const child = Bun.spawn(args, {
     cwd: options.cwd,
     env: options.env,
+    stdin: options.stdin ? new Blob([new Uint8Array(options.stdin)]) : "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });

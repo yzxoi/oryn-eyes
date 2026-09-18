@@ -1,5 +1,5 @@
 [Unit]
-Description=Oryn Eyes multimodal QQ support
+Description=Oryn Eyes multimodal chat support
 After=network-online.target
 Wants=network-online.target
 

@@ -25,13 +25,17 @@ class ImageRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def download_image(url: str, image_id: str, context: str) -> dict:
-    from PIL import Image, ImageOps
-
     if not trusted_image_url(url):
         raise ValueError("Unsupported image source")
     opener = urllib.request.build_opener(ImageRedirect())
     with opener.open(urllib.request.Request(url, headers={"User-Agent": "Oryn-Eyes/1"}), timeout=20) as response:
         data = response.read(8_000_001)
+    return normalize_image(data, image_id, context)
+
+
+def normalize_image(data: bytes, image_id: str, context: str) -> dict:
+    from PIL import Image, ImageOps
+
     if len(data) > 8_000_000:
         raise ValueError("Screenshot exceeds 8 MB")
     with Image.open(io.BytesIO(data)) as image:

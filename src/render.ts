@@ -51,7 +51,7 @@ export function renderIssue(issue: IssueDraft, context: { repository: string; sh
   lines.push("", "## 🔗 去重与相关记录", "", `已执行 ${context.searches} 次 GitHub 检索。检索用于辅助去重，不保证覆盖全部历史记录。`);
   if (issue.relatedIssues.length) lines.push("", ...issue.relatedIssues.map(n => `- https://github.com/${context.repository}/issues/${n}`));
   if (context.images.length) lines.push("", "## 🖼️ 用户提供的截图", "", ...context.images.map((i, n) => `![反馈截图 ${n + 1}](${i.url})`));
-  lines.push("", "---", "由 👁️ Oryn Eyes 从 QQ 反馈整理。用户描述、源码证据和待验证推测已分别列出；请以复现与维护者核查为准。");
+  lines.push("", "---", "由 👁️ Oryn Eyes 从用户反馈整理。用户描述、源码证据和待验证推测已分别列出；请以复现与维护者核查为准。");
   const body = lines.join("\n");
   if (body.length > 60000) throw new Error("Issue body exceeds publication limit");
   return body;
