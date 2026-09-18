@@ -6,6 +6,8 @@ import { log } from "../log";
 import { content, Event, type Content, type Message, type Resource } from "./message";
 
 export interface FeishuPort {
+  react(messageId: string, emoji: "GLANCE" | "DONE"): Promise<string>;
+  unreact(messageId: string, reactionId: string): Promise<void>;
   reply(message: Message, text: string, uuid: string): Promise<void>;
   quote(id: string): Promise<Message | undefined>;
   image(resource: Resource, id: string, signal: AbortSignal): Promise<ImageInput>;
@@ -16,7 +18,7 @@ export interface EyesPort {
   cancel(id: string, actor: { conversation: string; sender: string }): Promise<void>;
 }
 export type BridgeOptions = { appId: string; botId: string; budgetMs: number; limit: number; allowedChats: string[]; allowPrivate: boolean };
-type Task = { message: Message; actor: string; sender: string; conversation: string; ref: string; controller: AbortController; job?: string; done?: Promise<void> };
+type Task = { message: Message; actor: string; sender: string; conversation: string; ref: string; controller: AbortController; ack?: string; job?: string; done?: Promise<void> };
 type Recent = { time: number; value: Content };
 const ErrorCode = z.object({ code: z.union([z.number(), z.string().regex(/^[A-Z_0-9-]{1,50}$/)]).optional() });
 
@@ -92,10 +94,13 @@ export class FeishuBridge {
   private async run(task: Task, value: Content) {
     const signal = task.controller.signal;
     const timer = setTimeout(() => task.controller.abort(new Error("Task budget exhausted")), this.options.budgetMs);
-    let reply = "", outcome = "failed", received = false;
+    let reply = "", outcome = "failed";
     try {
       log("feishu_received", { ref: task.ref });
-      await this.send(task, `👁️ 收到\n日志编号：${task.ref}`, "receipt"); received = true;
+      task.ack = await this.feishu.react(task.message.message_id, "GLANCE").catch(error => {
+        log("feishu_reaction_failed", { ref: task.ref, emoji: "GLANCE", code: ErrorCode.safeParse(error).data?.code });
+        return undefined;
+      });
       signal.throwIfAborted();
       const recent = this.history(task.actor);
       const history: Incoming["history"] = recent.map(e => ({ role: "user", text: e.value.text }));
@@ -148,11 +153,19 @@ export class FeishuBridge {
       } else reply = "⚠️ 暂时无法取得处理结果，请稍后重试。";
       if (task.job) await this.eyes.cancel(task.job, task).catch(() => log("feishu_cancel_failed", { ref: task.ref, job: task.job }));
     } finally { clearTimeout(timer); }
-    if (received) {
-      try { await this.send(task, `${reply}\n\n日志编号：${task.ref}`, "final"); }
-      catch (error) { outcome = "reply_failed"; log("feishu_reply_failed", { ref: task.ref, job: task.job, code: ErrorCode.safeParse(error).data?.code }); }
-    } else outcome = "receipt_failed";
+    await this.switchDone(task);
+    try { await this.send(task, task.ack ? reply : `${reply}\n\n日志编号：${task.ref}`, "final"); }
+    catch (error) { outcome = "reply_failed"; log("feishu_reply_failed", { ref: task.ref, job: task.job, code: ErrorCode.safeParse(error).data?.code }); }
     log("feishu_finished", { ref: task.ref, job: task.job, outcome });
+  }
+  private async switchDone(task: Task) {
+    if (!task.ack) return;
+    const done = await this.feishu.react(task.message.message_id, "DONE").catch(error => {
+      log("feishu_reaction_failed", { ref: task.ref, emoji: "DONE", code: ErrorCode.safeParse(error).data?.code });
+      return undefined;
+    });
+    if (!done) return;
+    await this.feishu.unreact(task.message.message_id, task.ack).catch(error => log("feishu_reaction_failed", { ref: task.ref, emoji: "GLANCE", code: ErrorCode.safeParse(error).data?.code }));
   }
   async idle() { await Promise.all([...this.tasks.values()].map(t => t.done)); }
   async close() {

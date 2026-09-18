@@ -22,6 +22,8 @@ test("official SDK identity, reply and authenticated resource download pass thro
     requests.push(options);
     if (options.url?.includes("tenant_access_token")) return { code: 0, tenant_access_token: "fixture-token", expire: 7200 };
     if (options.url?.endsWith("/bot/v3/info")) return { code: 0, bot: { open_id: "ou_bot" } };
+    if (options.url?.endsWith("/reactions")) return { code: 0, data: { reaction_id: "r_fixture" } };
+    if (options.url?.includes("/reactions/")) return { code: 0, data: { reaction_id: "r_fixture" } };
     if (options.url?.includes("/resources/")) return { data: Readable.from([Buffer.from(encoded, "base64")]), headers: { "content-type": "image/png" } };
     return { code: 0, data: { message_id: "om_reply" } };
   }) as typeof client.client.httpInstance.request);
@@ -37,5 +39,12 @@ test("official SDK identity, reply and authenticated resource download pass thro
     const resource = requests.find(r => r.url?.includes("/resources/"));
     expect(resource?.url).toBe("https://open.feishu.cn/open-apis/im/v1/messages/om_fixture/resources/img_fixture");
     expect(resource?.headers).toMatchObject({ Authorization: "Bearer fixture-token" });
+    expect(await client.react("om_fixture", "DONE")).toBe("r_fixture");
+    await client.unreact("om_fixture", "r_fixture");
+    const reaction = requests.find(r => r.url?.endsWith("/reactions"));
+    expect(reaction?.url).toBe("https://open.feishu.cn/open-apis/im/v1/messages/om_fixture/reactions");
+    expect(reaction?.data).toMatchObject({ reaction_type: { emoji_type: "DONE" } });
+    const removal = requests.find(r => r.url?.includes("/reactions/"));
+    expect(removal?.url).toBe("https://open.feishu.cn/open-apis/im/v1/messages/om_fixture/reactions/r_fixture");
   } finally { request.mockRestore(); token.mockRestore(); }
 });

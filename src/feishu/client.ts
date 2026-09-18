@@ -29,6 +29,16 @@ export class FeishuClient implements FeishuPort {
     const response = await this.client.im.message.reply({ path: { message_id: message.message_id }, data: { content: JSON.stringify({ text }), msg_type: "text", uuid, reply_in_thread: Boolean(message.thread_id) } });
     if (response.code !== 0) throw Object.assign(new Error("Feishu reply failed"), { code: response.code });
   }
+  async react(messageId: string, emoji: "GLANCE" | "DONE") {
+    const response = await this.client.im.messageReaction.create({ path: { message_id: messageId }, data: { reaction_type: { emoji_type: emoji } } });
+    const reactionId = response.data?.reaction_id;
+    if (response.code !== 0 || !reactionId) throw Object.assign(new Error("Feishu reaction failed"), { code: response.code });
+    return reactionId;
+  }
+  async unreact(messageId: string, reactionId: string) {
+    const response = await this.client.im.messageReaction.delete({ path: { message_id: messageId, reaction_id: reactionId } });
+    if (response.code !== 0) throw Object.assign(new Error("Feishu reaction removal failed"), { code: response.code });
+  }
   async quote(id: string) {
     const response = await this.client.im.message.get({ path: { message_id: id } });
     if (response.code !== 0) throw Object.assign(new Error("Feishu quote failed"), { code: response.code });
