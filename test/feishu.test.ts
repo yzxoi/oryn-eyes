@@ -10,29 +10,38 @@ function event(id = "om_test", text = "@_user_1 你好", sender = "ou_user", ext
 }
 function fixture(overrides: Partial<FeishuPort> = {}, eyesOverrides: Partial<EyesPort> = {}, pause?: (signal: AbortSignal) => Promise<void>) {
   const replies: { id: string; text: string; uuid: string }[] = [], submitted: Incoming[] = [], cancelled: string[] = [];
-  const feishu: FeishuPort = { reply: async (m, text, uuid) => { replies.push({ id: m.message_id, text, uuid }); }, quote: async () => undefined, image: async (_r, id) => ({ id, data: "fixture", mime: "image/png", context: "fixture" }), ...overrides };
+  const reactions: { id: string; emoji: string }[] = [], removed: string[] = [];
+  const feishu: FeishuPort = {
+    react: async (id, emoji) => { reactions.push({ id, emoji }); return `r_${reactions.length}`; },
+    unreact: async (_id, reactionId) => { removed.push(reactionId); },
+    reply: async (m, text, uuid) => { replies.push({ id: m.message_id, text, uuid }); },
+    quote: async () => undefined,
+    image: async (_r, id) => ({ id, data: "fixture", mime: "image/png", context: "fixture" }),
+    ...overrides };
   const eyes: EyesPort = { submit: async m => { submitted.push(m); return "job"; }, status: async () => ({ status: "completed", reply: "结论" }), cancel: async id => { cancelled.push(id); }, ...eyesOverrides };
   const options: BridgeOptions = { appId: "cli_fixture", botId: "ou_bot", budgetMs: 10_000, limit: 20, allowedChats: [], allowPrivate: true };
   const bridge = new FeishuBridge(options, feishu, eyes, pause ?? (async signal => { signal.throwIfAborted(); }));
-  return { bridge, replies, submitted, cancelled, options };
+  return { bridge, replies, submitted, cancelled, reactions, removed, options };
 }
 
-test("Feishu acknowledges events synchronously, deduplicates and sends only a matching receipt and final", async () => {
+test("Feishu acknowledges events synchronously, deduplicates and switches to the done reaction with one final reply", async () => {
   let release!: () => void;
   const blocked = new Promise<void>(resolve => { release = resolve; });
   let polls = 0;
   const f = fixture({}, { status: async () => { await blocked; return ++polls < 3 ? { status: "running" } : { status: "completed", reply: "结论" }; } });
   expect(f.bridge.receive(event())).toBeUndefined();
   f.bridge.receive(event());
-  expect(f.replies).toHaveLength(1);
-  expect(f.replies[0]!.text).toMatch(/^👁️ 收到\n日志编号：[a-f0-9]{12}$/);
+  expect(f.reactions.map(r => r.emoji)).toEqual(["GLANCE"]);
+  expect(f.replies).toHaveLength(0);
   release(); await f.bridge.idle();
   expect(f.submitted).toHaveLength(1);
   expect(f.submitted[0]!.text).toBe("你好");
   expect(f.submitted[0]!.conversation).toStartWith("feishu:cli_fixture:");
-  expect(f.replies).toHaveLength(2);
-  expect(f.replies[1]!.text).toBe(`结论\n\n日志编号：${f.replies[0]!.text.split("日志编号：")[1]}`);
-  expect(f.replies[0]!.uuid).not.toBe(f.replies[1]!.uuid);
+  expect(f.replies).toHaveLength(1);
+  expect(f.replies[0]!.text).toBe("结论");
+  expect(f.reactions.map(r => r.emoji)).toEqual(["GLANCE", "DONE"]);
+  expect(f.removed).toEqual(["r_1"]);
+  expect(f.replies[0]!.uuid).not.toBe("");
 });
 
 test("private messages trigger; other bots, unrelated mentions and disallowed chats do not", async () => {
@@ -67,14 +76,14 @@ test("images, same-sender context and explicit quotes are included; other sender
   expect(f.submitted[0]!.history.map(m => m.text)).toEqual(["之前的问题", "引用"]);
 });
 
-test("cross-chat quotes are not read into a task; unreadable image-only messages close with reference", async () => {
+test("cross-chat quotes are not read into a task; unreadable image-only messages close with a single reply", async () => {
   const f = fixture({ quote: async () => Message.parse(event("parent", "secret", "other", { chat_id: "other_chat" }).message), image: async () => { throw new Error("unavailable"); } });
   f.bridge.receive(event("image", "", "ou_user", { message_type: "image", content: JSON.stringify({ image_key: "img" }), parent_id: "parent" }));
-  await f.bridge.idle(); expect(f.submitted).toHaveLength(0); expect(f.replies).toHaveLength(2);
-  expect(f.replies[1]!.text).not.toContain("secret"); expect(f.replies[1]!.text).toContain(f.replies[0]!.text.split("日志编号：")[1]!);
+  await f.bridge.idle(); expect(f.submitted).toHaveLength(0); expect(f.replies).toHaveLength(1);
+  expect(f.replies[0]!.text).not.toContain("secret");
 });
 
-test("stop cancels only the sender's tasks and closes each with its original reference", async () => {
+test("stop cancels only the sender's tasks and closes each with its own reaction switch", async () => {
   let started!: () => void; const admitted = new Promise<void>(r => { started = r; });
   const f = fixture({}, { submit: async () => { started(); return "job"; } }, signal => new Promise((_resolve, reject) => {
     signal.addEventListener("abort", () => reject(signal.reason), { once: true });
@@ -85,19 +94,29 @@ test("stop cancels only the sender's tasks and closes each with its original ref
   expect(f.cancelled).toHaveLength(0);
   f.bridge.receive(event("stop", "stop")); await f.bridge.idle();
   expect(f.cancelled).toEqual(["job"]);
-  expect(f.replies.filter(r => r.id === "om_test")).toHaveLength(2);
+  expect(f.replies.filter(r => r.id === "om_test")).toHaveLength(1);
   expect(f.replies.at(-1)!.text).toContain("已停止");
+  expect(f.reactions.filter(r => r.id === "om_test").map(r => r.emoji)).toEqual(["GLANCE", "DONE"]);
+  expect(f.removed).toEqual(["r_1"]);
 });
 
-test("submission failures close with a reference; backend timeout and redirects never leak credentials", async () => {
+test("submission failures close with a single reply; backend timeout and redirects never leak credentials", async () => {
   const f = fixture({}, { submit: async () => { throw new Error("fixture private credential"); } });
   f.bridge.receive(event()); await f.bridge.idle();
-  expect(f.replies).toHaveLength(2); expect(f.replies[1]!.text).not.toContain("private credential");
+  expect(f.replies).toHaveLength(1); expect(f.replies[0]!.text).not.toContain("private credential");
   const requests: RequestInit[] = [];
   const transport = (async (_url: unknown, options: RequestInit) => { requests.push(options); return Response.json({ id: "job" }); }) as typeof fetch;
   const http = new EyesHTTP("http://127.0.0.1:18080", "secret", transport);
   await http.submit({ messageId: "1", conversation: "c", sender: "s", text: "hello", images: [], history: [] }, new AbortController().signal);
   expect(requests[0]!.redirect).toBe("error"); expect(requests[0]!.signal).toBeInstanceOf(AbortSignal);
+});
+
+test("a failed acknowledgement reaction falls back to appending the log reference to the final reply", async () => {
+  const f = fixture({ react: async () => { throw new Error("reaction rejected"); } });
+  f.bridge.receive(event()); await f.bridge.idle();
+  expect(f.replies).toHaveLength(1);
+  expect(f.replies[0]!.text).toMatch(/^结论\n\n日志编号：[a-f0-9]{12}$/);
+  expect(f.removed).toHaveLength(0);
 });
 
 test("remote Oryn transport requires HTTPS and Feishu configuration requires credentials", () => {
@@ -115,17 +134,17 @@ test("stop during admission retains the returned job ID and cancels it", async (
   f.bridge.receive(event()); await admission;
   f.bridge.receive(event("stop_admission", "stop")); release("late_job"); await f.bridge.idle();
   expect(f.cancelled).toEqual(["late_job"]);
-  expect(f.replies).toHaveLength(2); expect(f.replies[1]!.text).toContain("已停止");
+  expect(f.replies).toHaveLength(1); expect(f.replies[0]!.text).toContain("已停止");
 });
 
 test("deadline cancels the backend and failed final delivery is not blindly resent", async () => {
   const f = fixture({}, {}, signal => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })));
   f.options.budgetMs = 15;
   f.bridge.receive(event()); await f.bridge.idle();
-  expect(f.cancelled).toEqual(["job"]); expect(f.replies[1]!.text).toContain("超时");
+  expect(f.cancelled).toEqual(["job"]); expect(f.replies[0]!.text).toContain("超时");
   let sends = 0;
-  const bad = fixture({ reply: async () => { if (++sends === 2) throw new Error("Ambiguous delivery"); } });
-  bad.bridge.receive(event()); await bad.bridge.idle(); expect(sends).toBe(2);
+  const bad = fixture({ reply: async () => { sends++; throw new Error("Ambiguous delivery"); } });
+  bad.bridge.receive(event()); await bad.bridge.idle(); expect(sends).toBe(1);
 });
 
 test("context expires and stop during quote preparation does not submit a model task", async () => {
@@ -139,5 +158,5 @@ test("context expires and stop during quote preparation does not submit a model 
   const f = fixture({ quote: async () => { quoted(); return new Promise(() => {}); } });
   f.bridge.receive(event("current", "现在", "ou_user", { parent_id: "parent" })); await started;
   f.bridge.receive(event("stop_prepare", "stop")); await f.bridge.idle();
-  expect(f.submitted).toHaveLength(0); expect(f.replies[1]!.text).toContain("已停止");
+  expect(f.submitted).toHaveLength(0); expect(f.replies[0]!.text).toContain("已停止");
 });
