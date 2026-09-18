@@ -11,9 +11,11 @@
     "check": "bun run typecheck && bun test test && python3 -m unittest discover -s test -p \"test_*.py\"",
     "core:install": "bun script/install-core.ts",
     "worker:build": "bun build src/worker.ts --target=bun --external \"@ericsanchezok/*\" --outfile .runtime/worker.js",
-    "smoke": "bun script/smoke.ts"
+    "smoke": "bun script/smoke.ts",
+    "feishu": "bun src/feishu.ts"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "1.74.0",
     "zod": "4.1.8"
   },
   "devDependencies": {

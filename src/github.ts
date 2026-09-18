@@ -81,7 +81,7 @@ export class GitHub {
   }
   async ensureLabels() {
     const definitions = [
-      { name: "👁️ oryn-eyes", color: "6554C0", description: "Feedback collected from QQ by Oryn Eyes" },
+      { name: "👁️ oryn-eyes", color: "6554C0", description: "Feedback collected by Oryn Eyes" },
       { name: "🐛 bug", color: "D73A4A", description: "Reported defect requiring investigation" },
       { name: "✨ enhancement", color: "A2EEEF", description: "Feature or experience improvement" },
       { name: "📚 documentation", color: "0075CA", description: "Documentation or usage clarity" },

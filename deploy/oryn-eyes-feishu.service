@@ -1,0 +1,29 @@
+[Unit]
+Description=Oryn Eyes Feishu long-connection bridge
+After=network-online.target oryn-eyes.service
+Wants=network-online.target oryn-eyes.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/oryn-eyes
+ExecStart=%h/oryn-eyes/bin/bun %h/oryn-eyes/src/feishu.ts
+EnvironmentFile=%h/.config/oryn-eyes/bridge.env
+EnvironmentFile=%h/.config/oryn-eyes/feishu.env
+Environment=PATH=%h/oryn-eyes/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONDONTWRITEBYTECODE=1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+MemoryMax=512M
+TasksMax=64
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
+
+[Install]
+WantedBy=default.target
