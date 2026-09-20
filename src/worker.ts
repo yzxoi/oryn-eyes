@@ -58,11 +58,14 @@ process.env.SYNERGY_CONFIG_CONTENT = JSON.stringify({
   provider: {
     [providerID]: {
       npm: "@ai-sdk/openai-compatible",
-      name: "Oryn inference",
       options: {
         baseURL:
           process.env.ORYN_BASE_URL?.trim() || "https://api.openai.com/v1",
         apiKey: process.env.ORYN_API_KEY,
+        // Strict OpenAI-compatible endpoints (e.g. the SII vLLM deployment)
+        // reject multiple or mid-conversation system messages; join all system
+        // prompts into one leading system message.
+        mergeSystemMessages: true,
       },
       models: {
         [modelID]: model,

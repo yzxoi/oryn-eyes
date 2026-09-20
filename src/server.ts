@@ -9,6 +9,7 @@ import { log, safeError } from "./log";
 import { Queue, type Job } from "./queue";
 import { prepareWorkspace } from "./workspace";
 import { readGateway } from "./gateway";
+import { modelDefinition } from "./model";
 import { supportPrompt } from "./prompt";
 import { runHarness } from "./runner";
 import { renderIssue, validateFacts, groundReplyLinks } from "./render";
@@ -154,7 +155,8 @@ export async function startService(settings: Settings, options: { analyze?: type
     }
     if (settings.publish) await github.ensureLabels();
     ready = true;
-    log("service_ready", { repository: settings.repository, model: settings.model, context: 1_000_000, reasoningEffort: "max", multimodal: true, publish: settings.publish, port: server.port });
+    const definition = modelDefinition(settings.model, "max");
+    log("service_ready", { repository: settings.repository, model: settings.model, context: definition.limit.context, reasoningEffort: "max", multimodal: definition.modalities?.input.includes("image") ?? false, publish: settings.publish, port: server.port });
   } catch (error) { server.stop(true); throw error; }
   return { server, queue, close: () => { queue.close(); server.stop(true); } };
 }
