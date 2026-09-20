@@ -30,7 +30,7 @@ The existing QQ deployment targets **YourTongji/YourTJ-Hub**. Feishu is an optio
 
 ## Model and Core
 
-Default model: Zhipu Coding Plan `glm-5.3-flash`, endpoint `https://open.bigmodel.cn/api/coding/paas/v4`, configured context window **1,000,000**, image input, **reasoning effort `max`**, thinking enabled. The context number is configuration, not a claim of a full-window capacity benchmark.
+Default model: Zhipu Coding Plan `glm-5.3-flash`, endpoint `https://open.bigmodel.cn/api/coding/paas/v4`, configured context window **1,000,000**, image input, **reasoning effort `max`**, thinking enabled. Any OpenAI-compatible chat endpoint also works through `ORYN_BASE_URL` / `ORYN_API_KEY` / `ORYN_MODEL`, e.g. the SII vLLM deployment of `Qwen3.8-27B` (image input, tool calls, `json_object` and streaming verified against the live endpoint, ~1M-token window). That endpoint accepts reasoning effort only at `none/low/medium` and applies its strongest level with thinking enabled when the field is omitted, so the `max` variant omits `reasoning_effort` and `high` maps to `medium`. Its strict single-leading-system requirement is met by enabling Core's `mergeSystemMessages` provider option, which joins all system prompts into one leading system message. The context number is configuration, not a claim of a full-window capacity benchmark.
 
 Core is pinned by full commit in `config/core.json`, with a frozen dependency lock. `script/install-core.ts` uses Synergy's public package builder and installs only four packages. `synergy-link-protocol` is a protocol dependency; no Link service is deployed.
 
