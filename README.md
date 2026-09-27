@@ -22,7 +22,7 @@ flowchart LR
 - Answers usage questions; asks for missing essential information; links existing Issues; directly files clear new bugs, feature requests, and documentation gaps.
 - Searches open/closed Issues and PRs through a repository-scoped read gateway. A create/known-issue result requires successful search evidence.
 - Downloads source at a specific commit for each task. File citations are checked against actual source lines and quotes. Static evidence is explicitly separated from user descriptions and hypotheses; no execution/reproduction is claimed.
-- Sends image bytes through Core attachments to the model. QQ and Feishu images are normalized, resized, and stripped of EXIF metadata. Current and quoted screenshots take precedence over recent images.
+- Sends image bytes through Core attachments to the model. QQ and Feishu images are normalized, resized, and stripped of EXIF metadata. Current and quoted screenshots take precedence over recent images. QQ downloads accept trusted HTTPS CDN hosts, including QQ NT's `multimedia.nt.qq.com.cn`; redirects must stay within the same allowlist.
 - Publishes relevant, non-sensitive screenshots to `.oryn-eyes/assets/` on the target repository's `oryn-eyes-assets` branch, linking them in the Issue. This avoids inventing an unsupported GitHub attachment-upload API or changing the development branch.
 - Adds readable Issue sections and labels. The host performs all GitHub writes; the model has no GitHub token or write tools.
 
@@ -92,7 +92,7 @@ The task budget bounds the whole task. Provider request timeouts use the remaini
 
 ## State and limits
 
-Only necessary redacted service diagnostics remain locally. Model sessions, source snapshots and images are temporary. Concurrent tasks share an in-memory source archive for at most five minutes, keyed by the exact commit; each task still gets its own extracted workspace. Credentials and installed code are deployment inputs, not memory. Message deduplication and status are in memory for 30 minutes; published Issues carry an opaque marker so repeated deliveries can recover a prior creation from recent Issues. No promise of exactly-once delivery across arbitrary outages is made: ambiguous GitHub writes are checked before any retry, and automatic blind write retries are prohibited.
+Only necessary redacted service diagnostics remain locally. Model sessions, source snapshots and images are temporary. In archive mode, concurrent tasks share an in-memory source archive for at most five minutes, keyed by the exact commit; each task still gets its own extracted workspace. The optional source cache described below persists repository Git objects only. Credentials and installed code are deployment inputs, not memory. Message deduplication and status are in memory for 30 minutes; published Issues carry an opaque marker so repeated deliveries can recover a prior creation from recent Issues. No promise of exactly-once delivery across arbitrary outages is made: ambiguous GitHub writes are checked before any retry, and automatic blind write retries are prohibited.
 
 See [the decision record](docs/decisions/2026-09-12-core-support-service.md) and [upstream provenance](NOTICE.md).
 

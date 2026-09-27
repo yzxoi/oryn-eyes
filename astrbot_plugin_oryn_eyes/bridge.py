@@ -12,9 +12,10 @@ from collections import OrderedDict
 def trusted_image_url(url: str) -> bool:
     parsed = urllib.parse.urlparse(url)
     host = (parsed.hostname or "").lower()
-    return parsed.scheme == "https" and not parsed.username and parsed.port in (None, 443) and any(
+    trusted_host = host == "multimedia.nt.qq.com.cn" or any(
         host == domain or host.endswith("." + domain) for domain in ("qq.com", "qpic.cn", "gtimg.cn")
     )
+    return parsed.scheme == "https" and not parsed.username and parsed.port in (None, 443) and trusted_host
 
 
 class ImageRedirect(urllib.request.HTTPRedirectHandler):

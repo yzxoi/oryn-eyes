@@ -22,7 +22,8 @@ class BridgeTest(unittest.TestCase):
 
     def test_downloads_only_qq_https_cdn_images(self):
         self.assertTrue(bridge.trusted_image_url("https://multimedia.nt.qq.com/download?x=1"))
-        for url in ["file:///etc/passwd", "http://127.0.0.1/private", "https://qq.com.evil.example/x", "https://qq.com:123/x", "https://a@qq.com/x"]:
+        self.assertTrue(bridge.trusted_image_url("https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=fixture"))
+        for url in ["file:///etc/passwd", "http://127.0.0.1/private", "https://qq.com.evil.example/x", "https://qq.com:123/x", "https://a@qq.com/x", "http://multimedia.nt.qq.com.cn/x", "https://multimedia.nt.qq.com.cn.evil.example/x", "https://evil.multimedia.nt.qq.com.cn/x", "https://other.qq.com.cn/x"]:
             self.assertFalse(bridge.trusted_image_url(url))
 
     def test_screenshot_normalization_removes_metadata_and_bounds_dimensions(self):
