@@ -98,7 +98,22 @@ See [the decision record](docs/decisions/2026-09-12-core-support-service.md) and
 
 ### Source downloads on slower networks
 
-Source preparation shares the request's total budget (`ORYN_BUDGET_SECONDS`), including cancellation. Concurrent requests reuse a commit's in-flight download; stopping one request leaves other consumers running, while stopping the last consumer aborts the transfer. Completed archives are cached in RAM for five minutes. Extraction retains its 120-second resource limit and also stops when the request is cancelled.
+Set `ORYN_SOURCE_CACHE_ROOT` to a host-owned directory to keep a shallow bare Git cache.
+Every message resolves the current default-branch commit through GitHub. Missing commits are fetched
+incrementally from the official repository with a separate `ORYN_SOURCE_FETCH_TIMEOUT_SECONDS`
+limit (default 120 seconds); unchanged commits require no Git transfer. Fetch failures fail the task
+explicitly rather than silently using stale source. Git credentials are supplied only to the host's
+Git process, never stored in the cache or given to the model.
+
+Each task exports its exact commit into a separate temporary workspace with no `.git` directory.
+Concurrent cache access is serialized, while prepared snapshots are independent. The workspace is
+removed on completion, failure or cancellation. Startup and a 15-minute maintenance timer remove
+orphaned task/worker directories older than two hours; active workspaces are excluded. The persistent
+cache contains repository source only, not conversations, screenshots or model history. One service
+process owns a cache root. Keep it outside `ORYN_TEMP_ROOT`, on storage accessible only to the service.
+
+Without `ORYN_SOURCE_CACHE_ROOT`, source preparation uses the bounded archive download and optional
+public archive mirror. Both modes share the total task budget and preserve safe extraction limits.
 
 `ORYN_GITHUB_ARCHIVE_MIRROR` is an optional operator-trusted download prefix. Only repositories confirmed public by the official GitHub API use it. The service resolves the commit SHA from GitHub first and downloads that SHA's archive through the prefix; GitHub tokens, API calls, Issue writes, and screenshots never go through it. This trusts the mirror to deliver source faithfully: a SHA in the URL alone does not authenticate archive bytes. Leave it unset for official downloads. Mirror failures fail the request within its budget and appear in service logs.
 

@@ -14,6 +14,8 @@ export const Settings = z.object({
   concurrency: z.coerce.number().int().min(1).max(4).default(2),
   queueLimit: z.coerce.number().int().min(1).max(100).default(20),
   tempRoot: z.string().default("/tmp/oryn-eyes"),
+  sourceCacheRoot: z.string().min(1).optional(),
+  sourceFetchTimeout: z.coerce.number().int().min(10).max(600).default(120),
   publish: z.boolean().default(true),
 });
 export type Settings = z.infer<typeof Settings>;
@@ -32,6 +34,8 @@ export function settingsFromEnv(): Settings {
     concurrency: process.env.ORYN_CONCURRENCY,
     queueLimit: process.env.ORYN_QUEUE_LIMIT,
     tempRoot: process.env.ORYN_TEMP_ROOT,
+    sourceCacheRoot: process.env.ORYN_SOURCE_CACHE_ROOT || undefined,
+    sourceFetchTimeout: process.env.ORYN_SOURCE_FETCH_TIMEOUT_SECONDS,
     publish: process.env.ORYN_PUBLISH !== "false",
   });
 }

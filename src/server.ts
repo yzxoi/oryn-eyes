@@ -1,13 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
-import { mkdir, readdir, rm, stat } from "node:fs/promises";
-import path from "node:path";
 import { Incoming, messageKey, type Analysis } from "./contracts";
 import { settingsFromEnv, type Settings } from "./config";
 import { GitHub } from "./github";
 import { validateImage } from "./images";
 import { log, safeError } from "./log";
 import { Queue, type Job } from "./queue";
-import { prepareWorkspace } from "./workspace";
+import { prepareWorkspace, cleanupWorkspaces } from "./workspace";
 import { readGateway } from "./gateway";
 import { modelDefinition } from "./model";
 import { supportPrompt } from "./prompt";
@@ -22,7 +20,7 @@ export function authorized(request: Request, secret: string) {
 export async function startService(settings: Settings, options: { analyze?: typeof runHarness; github?: GitHub; prepare?: typeof prepareWorkspace } = {}) {
   const github = options.github ?? new GitHub(settings.repository, settings.githubToken, fetch, settings.archiveMirror);
   const analyze = options.analyze ?? runHarness;
-  const prepare = options.prepare ?? prepareWorkspace;
+  const prepare = options.prepare ?? ((github: GitHub, tempRoot: string, signal?: AbortSignal) => prepareWorkspace(github, tempRoot, signal, settings.sourceCacheRoot ? { root: settings.sourceCacheRoot, token: settings.githubToken, timeoutSeconds: settings.sourceFetchTimeout } : undefined));
   const queue = new Queue(settings.concurrency, settings.queueLimit);
   const histories = new Map<string, { updated: number; entries: Incoming["history"] }>();
   let publication: Promise<unknown> = Promise.resolve();
@@ -147,18 +145,17 @@ export async function startService(settings: Settings, options: { analyze?: type
     },
   });
   try {
-    await mkdir(settings.tempRoot, { recursive: true, mode: 0o700 });
-    for (const name of await readdir(settings.tempRoot)) {
-      if (!/^(?:task|worker)-[\w-]+$/.test(name)) continue;
-      const item = path.join(settings.tempRoot, name);
-      if (Date.now() - (await stat(item)).mtimeMs > 2 * 3600_000) await rm(item, { recursive: true, force: true });
-    }
+    await cleanupWorkspaces(settings.tempRoot);
     if (settings.publish) await github.ensureLabels();
     ready = true;
     const definition = modelDefinition(settings.model, "max");
     log("service_ready", { repository: settings.repository, model: settings.model, context: definition.limit.context, reasoningEffort: "max", multimodal: definition.modalities?.input.includes("image") ?? false, publish: settings.publish, port: server.port });
   } catch (error) { server.stop(true); throw error; }
-  return { server, queue, close: () => { queue.close(); server.stop(true); } };
+  const cleanupTimer = setInterval(() => {
+    void cleanupWorkspaces(settings.tempRoot).catch(error => log("workspace_cleanup_failed", { error: safeError(error, secrets) }));
+  }, 15 * 60_000);
+  cleanupTimer.unref();
+  return { server, queue, close: () => { clearInterval(cleanupTimer); queue.close(); server.stop(true); } };
 }
 
 if (import.meta.main) {
