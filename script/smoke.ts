@@ -9,6 +9,9 @@ import { Incoming } from "../src/contracts";
 import { modelDefinition } from "../src/model";
 
 const live = process.argv.includes("--live");
+const invalidScreenshot = process.argv.includes("--invalid-screenshot");
+if (live && invalidScreenshot) throw new Error("Invalid screenshot fixture is local-only");
+let invalidScreenshotIssued = false, screenshotCorrectionSeen = false;
 const key = process.env.ORYN_API_KEY;
 if (live && !key) throw new Error("ORYN_API_KEY is required for the live probe");
 const modelID = process.env.ORYN_MODEL || "glm-5.3-flash";
@@ -40,6 +43,7 @@ const proxy = Bun.serve({ hostname: "127.0.0.1", port: 0, idleTimeout: 255, asyn
   if (variant.thinking) assert.deepEqual(body.thinking, variant.thinking);
   if (variant.chat_template_kwargs) assert.deepEqual(body.chat_template_kwargs, variant.chat_template_kwargs);
   requests++;
+  screenshotCorrectionSeen ||= JSON.stringify(body.messages).includes("screenshotIds referenced an unavailable image");
   for (const message of body.messages) {
     if (message.role === "tool") { sourceSeen ||= JSON.stringify(message.content).includes(sentinel); webSeen ||= JSON.stringify(message.content).includes(webSentinel); }
     reasoningSeen ||= message.role === "assistant" && Boolean(message.reasoning_content);
@@ -52,7 +56,11 @@ const proxy = Bun.serve({ hostname: "127.0.0.1", port: 0, idleTimeout: 255, asyn
     return new Response(response.body, { headers: { "Content-Type": "text/event-stream" } });
   }
   const done = sourceSeen && webSeen;
-  const delta = done ? { role: "assistant", content: JSON.stringify({ action: "qa", reply: `${sentinel} ${webSentinel} ${color}` }) } : {
+  const injectInvalidScreenshot = done && invalidScreenshot && !invalidScreenshotIssued;
+  invalidScreenshotIssued ||= injectInvalidScreenshot;
+  const delta = done ? { role: "assistant", content: JSON.stringify(injectInvalidScreenshot ? {
+    action: "create_issue", reply: "fixture result", issue: { kind: "bug", title: "bug: fixture issue", description: "Synthetic screenshot reference validation fixture.", screenshotIds: ["invented_screenshot"] },
+  } : { action: "qa", reply: `${sentinel} ${webSentinel} ${color}` }) } : {
     role: "assistant", reasoning_content: "Inspect the evidence before answering.", tool_calls: [{ index: 0, id: sourceSeen ? "search" : "source", type: "function", function: { name: sourceSeen ? "webfetch" : "read", arguments: JSON.stringify(sourceSeen ? { url: gatewayURL + "/search", format: "text" } : { filePath: "evidence.txt" }) } }],
   };
   const event = (d: unknown, finish: string | null) => ({ id: "eyes-fixture", object: "chat.completion.chunk", created: 1, model: body.model, choices: [{ index: 0, delta: d, finish_reason: finish }] });
@@ -64,5 +72,6 @@ try {
   const result = await runHarness(settings, workspace, `Read evidence.txt with read and fetch ${gatewayURL}/search with webfetch. Describe the dominant color of the attached image using its English color name. Return action=qa and reply containing the EXACT text evidence token, EXACT search result token, and image color. Do not invent any token.`, images, gatewayURL);
   assert.equal(result.action, "qa"); assert.ok(result.reply.includes(sentinel)); assert.ok(result.reply.includes(webSentinel)); assert.ok(result.reply.toLowerCase().includes(color));
   assert.ok(imageRequests > 0, "Core must send actual image bytes"); assert.ok(sourceSeen); assert.ok(webSeen); assert.ok(searches > 0); assert.ok(reasoningSeen, "Tool continuation must retain reasoning_content");
+  if (invalidScreenshot) { assert.ok(invalidScreenshotIssued); assert.ok(screenshotCorrectionSeen, "Invalid screenshot IDs must reach the bounded correction prompt"); }
   console.log(JSON.stringify({ passed: true, live, model: modelID, requests, imageRequests, sourceSeen, webSeen, reasoningSeen, imageUnderstood: true, contextConfigured: definition.limit.context, reasoningEffort: "max" }));
 } finally { proxy.stop(true); gateway.stop(true); await rm(temp, { recursive: true, force: true }); }

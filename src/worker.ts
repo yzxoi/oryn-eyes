@@ -324,6 +324,11 @@ try {
           try {
             const report = parseReport(text);
             if (report.issue) await validateFacts(report.issue, input.workspace);
+            const availableImages = input.images.map((image) => image.id);
+            if (report.issue?.screenshotIds.some((id) => !availableImages.includes(id)))
+              throw new Error(
+                `screenshotIds referenced an unavailable image. Allowed IDs: ${JSON.stringify(availableImages)}. Use [] when no supplied screenshot supports this report; never invent an image or claim to have seen one.`,
+              );
             const toolCalls = messages
               .flatMap((message) => message.parts)
               .filter((part) => part.type === "tool").length;

@@ -32,6 +32,7 @@ jobs:
       - run: bun run check
       - run: bun run core:install
       - run: bun run smoke
+      - run: bun run smoke --invalid-screenshot
       - name: Package Linux deployment
         run: |
           mkdir -p bin dist

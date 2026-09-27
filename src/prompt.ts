@@ -30,5 +30,6 @@ PR 检索：${context.gateway}/search?q=<URL编码的关键词>&kind=pr
 ${JSON.stringify({ text: message.text, history: message.history, images: message.images.map(i => ({ id: i.id, context: i.context })) })}
 
 图片按 images 顺序直接附在本次输入中。结合可见内容判断，读不清时如实说明。
+screenshotIds 只能取自 ${JSON.stringify(message.images.map(i => i.id))}；没有已提供且相关的图片时必须返回 []，不得编造图片编号或声称看到了未提供的截图。
 返回严格符合提供 schema 的一个 JSON 对象。`;
 }
