@@ -11,6 +11,12 @@ spec.loader.exec_module(bridge)
 
 
 class BridgeTest(unittest.TestCase):
+    def test_server_advertises_combined_wait_with_legacy_fallback(self):
+        self.assertEqual(bridge.response_wait_budget({"timeoutSeconds": 3600}, 900), 3600)
+        self.assertEqual(bridge.response_wait_budget({}, 900), 900)
+        for value in [None, True, "3600", -1, 0, 10201, float("nan"), float("inf")]:
+            self.assertEqual(bridge.response_wait_budget({"timeoutSeconds": value}, 900), 900)
+
     def test_history_is_scoped_to_user_and_expires(self):
         recent = bridge.Recent(ttl=30)
         with patch.object(bridge.time, "time", return_value=100):

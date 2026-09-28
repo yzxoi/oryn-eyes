@@ -55,3 +55,35 @@ test("authenticated message -> evidence search -> one automatic issue; status po
     expect((await fetch(base + "/v1/jobs/" + accepted.id, { headers })).status).toBe(200);
   } finally { app.close(); await rm(temp, { recursive: true, force: true }); }
 });
+
+test("queued time does not consume the execution budget", async () => {
+  const temp = await mkdtemp(path.join(tmpdir(), "eyes-budget-"));
+  const settings = Settings.parse({ repository: "owner/repo", githubToken: "unused", apiKey: "unused", bridgeToken: "bridge-token-longer-than-24", port: 0, tempRoot: temp, concurrency: 1, budget: 30, queueBudget: 60, publish: false });
+  let release!: () => void, entered!: () => void;
+  const enteredPromise = new Promise<void>(r => { entered = r; });
+  const hold = new Promise<void>(r => { release = r; });
+  const budgets: number[] = [];
+  const app = await startService(settings, {
+    github: new GitHub(settings.repository, settings.githubToken, (async (_input: string | URL | Request, _init?: RequestInit) => Response.json([])) as typeof fetch),
+    prepare: async () => ({ directory: temp, workspace: temp, sha: "a".repeat(40), branch: "main", private: false, dispose: async () => {} }),
+    analyze: async (limits) => {
+      budgets.push(limits.budget);
+      if (budgets.length === 1) { entered(); await hold; }
+      return { action: "qa", reply: "完成" };
+    },
+  });
+  const base = `http://127.0.0.1:${app.server.port}`;
+  const headers = { Authorization: `Bearer ${settings.bridgeToken}`, "Content-Type": "application/json" };
+  const submit = async (id: string) => (await (await fetch(base + "/v1/messages", { method: "POST", headers, body: JSON.stringify({ messageId: id, conversation: "g", sender: "u", text: "你好" }) })).json()) as { id: string; timeoutSeconds: number };
+  try {
+    await submit("first"); await enteredPromise;
+    const accepted = await submit("waiting"), job = app.queue.get(accepted.id)!;
+    expect(accepted.timeoutSeconds).toBe(90); expect(job.status).toBe("queued");
+    job.created -= 40_000; // More than the execution budget, less than queue allowance.
+    release();
+    for (let i = 0; i < 100 && job.status !== "completed"; i++) await Bun.sleep(5);
+    expect(job.status).toBe("completed"); expect(budgets).toHaveLength(2);
+    expect(budgets[1]).toBeGreaterThanOrEqual(29);
+    expect(job.started! - job.created).toBeGreaterThanOrEqual(40_000);
+  } finally { release(); app.close(); await rm(temp, { recursive: true, force: true }); }
+});

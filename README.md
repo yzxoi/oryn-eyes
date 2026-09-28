@@ -80,7 +80,8 @@ The service binds to loopback and authenticates all message/status/cancel APIs. 
 | `ORYN_REPOSITORY` | `YourTongji/YourTJ-Hub` |
 | `ORYN_MODEL` | `glm-5.3-flash` |
 | `ORYN_BASE_URL` | Official Zhipu Coding Plan endpoint |
-| `ORYN_BUDGET_SECONDS` | `900` |
+| `ORYN_BUDGET_SECONDS` | `1800` (execution, starting after admission from the queue) |
+| `ORYN_QUEUE_BUDGET_SECONDS` | `1800` (maximum queue wait, separately bounded) |
 | `ORYN_CONCURRENCY` | `2` |
 | `ORYN_QUEUE_LIMIT` | `20` |
 | `ORYN_PORT` | `18080` |
@@ -91,6 +92,13 @@ The service binds to loopback and authenticates all message/status/cancel APIs. 
 The task budget bounds the whole task. Provider request timeouts use the remaining budget, with separate first-byte and stream-idle limits. Shutdown cancels workers and removes temporary homes. Stale task directories older than two hours are reclaimed on startup.
 
 ## State and limits
+
+Queue waiting does not consume the execution budget. Each task gets its full execution budget
+when it starts, including source preparation, inference and publication. Queue waiting has its
+own limit and expires without running the model. Admission returns `timeoutSeconds` for the
+combined maximum; the QQ adapter uses it plus 60 seconds for the final reply. Older adapters
+must have their polling timeout adjusted separately. The support prompt asks for focused
+intake evidence instead of exhaustive implementation research; reasoning remains `max`.
 
 Unknown screenshot IDs are corrected inside the existing bounded Core report-correction loop,
 within the original task budget. The prompt lists the supplied IDs and requires an empty list

@@ -21,7 +21,7 @@ export async function startService(settings: Settings, options: { analyze?: type
   const github = options.github ?? new GitHub(settings.repository, settings.githubToken, fetch, settings.archiveMirror);
   const analyze = options.analyze ?? runHarness;
   const prepare = options.prepare ?? ((github: GitHub, tempRoot: string, signal?: AbortSignal) => prepareWorkspace(github, tempRoot, signal, settings.sourceCacheRoot ? { root: settings.sourceCacheRoot, token: settings.githubToken, timeoutSeconds: settings.sourceFetchTimeout } : undefined));
-  const queue = new Queue(settings.concurrency, settings.queueLimit);
+  const queue = new Queue(settings.concurrency, settings.queueLimit, 30 * 60_000, settings.queueBudget * 1000);
   const histories = new Map<string, { updated: number; entries: Incoming["history"] }>();
   let publication: Promise<unknown> = Promise.resolve();
   let ready = false;
@@ -43,7 +43,9 @@ export async function startService(settings: Settings, options: { analyze?: type
   async function processMessage(job: Job, original: Incoming) {
     let work: Awaited<ReturnType<typeof prepareWorkspace>> | undefined;
     let gateway: ReturnType<typeof readGateway> | undefined;
-    const deadline = job.created + settings.budget * 1000;
+    const started = job.started ?? Date.now();
+    const deadline = started + settings.budget * 1000;
+    log("job_budget", { job: job.id, queueSeconds: Math.round((started - job.created) / 1000), taskSeconds: settings.budget });
     const timer = setTimeout(() => job.controller.abort(new Error("Task budget exhausted")), Math.max(1, deadline - Date.now()));
     const check = () => { if (Date.now() >= deadline) job.controller.abort(new Error("Task budget exhausted")); job.controller.signal.throwIfAborted(); };
     try {
@@ -124,7 +126,7 @@ export async function startService(settings: Settings, options: { analyze?: type
           let bytes = 0; for (const image of message.images) bytes += validateImage(image).bytes.length;
           if (bytes > 20_000_000) throw new Error("Image total exceeds 20 MB");
           const { job, duplicate } = queue.submit(messageKey(message, settings.repository), message.conversation, message.sender, job => processMessage(job, message));
-          return Response.json({ id: job.id, status: job.status, duplicate }, { status: 202 });
+          return Response.json({ id: job.id, status: job.status, duplicate, timeoutSeconds: settings.queueBudget + settings.budget }, { status: 202 });
         } catch (error) {
           const busy = error instanceof Error && error.message === "Queue is full";
           return Response.json({ error: busy ? "服务繁忙，请稍后重试" : "Invalid message or image payload" }, { status: busy ? 429 : 400 });

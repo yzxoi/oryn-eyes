@@ -11,7 +11,8 @@ EnvironmentFile=%h/.config/oryn-eyes/model.env
 EnvironmentFile=%h/.config/oryn-eyes/github.env
 EnvironmentFile=%h/.config/oryn-eyes/bridge.env
 Environment=ORYN_REPOSITORY=YourTongji/YourTJ-Hub
-Environment=ORYN_BUDGET_SECONDS=900
+Environment=ORYN_BUDGET_SECONDS=1800
+Environment=ORYN_QUEUE_BUDGET_SECONDS=1800
 Environment=ORYN_CONCURRENCY=2
 Environment=PATH=%h/oryn-eyes/bin:/usr/local/bin:/usr/bin:/bin
 Restart=on-failure

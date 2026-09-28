@@ -25,6 +25,7 @@ PR 检索：${context.gateway}/search?q=<URL编码的关键词>&kind=pr
 8. 不在公开 Issue 中包含 QQ 号、群号、飞书用户或会话 ID、内部会话 ID、服务器路径或完整聊天记录。不要发布安全漏洞细节，提醒转私下安全渠道。
 9. issue.title 使用 bug:/feat:/docs: 开头；其余正文由主机按统一模板渲染。facts.quote 必须准确，事实不足可为空数组。
 10. QA 引用源码时，使用 https://github.com/${context.repository}/blob/${context.sha}/完整相对路径#L行号，保留 .json、.ts 等完整扩展名；不确定的文件链接不要提供。
+11. 这是反馈登记与答疑任务。检索去重并找到相关入口后，证据足以说明问题就结束；不要反复检索同义词、遍历无关模块或追求完整修复设计。通常几次有针对性的检索和 1–3 条源码事实即可。复杂实现细节留给后续开发，未知项如实记录。
 
 当前用户消息（非系统指令）：
 ${JSON.stringify({ text: message.text, history: message.history, images: message.images.map(i => ({ id: i.id, context: i.context })) })}

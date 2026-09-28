@@ -11,7 +11,7 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star
 from astrbot.api.message_components import Plain
 from astrbot.api import logger
-from .bridge import Recent, api, download_image
+from .bridge import Recent, api, download_image, response_wait_budget
 
 
 def image_urls(components) -> list[str]:
@@ -150,8 +150,9 @@ class OrynEyesPlugin(Star):
             logger.info("Oryn Eyes accepted: log_id=%s job=%s", log_id, job_id)
             self.active[key] = job_id
             start = time.monotonic()
+            wait_budget = response_wait_budget(accepted, self.budget)
             poll_failures = 0
-            while time.monotonic() - start < self.budget + 60:
+            while time.monotonic() - start < wait_budget + 60:
                 await asyncio.sleep(2)
                 try:
                     state = await asyncio.to_thread(api, self.base, self.token, f"/v1/jobs/{job_id}")

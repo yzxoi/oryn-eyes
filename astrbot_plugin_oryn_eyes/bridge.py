@@ -9,6 +9,13 @@ import urllib.parse
 from collections import OrderedDict
 
 
+def response_wait_budget(accepted: dict, fallback: int) -> float:
+    value = accepted.get("timeoutSeconds", fallback)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 1 <= value <= 10200:
+        return fallback
+    return value
+
+
 def trusted_image_url(url: str) -> bool:
     parsed = urllib.parse.urlparse(url)
     host = (parsed.hostname or "").lower()
