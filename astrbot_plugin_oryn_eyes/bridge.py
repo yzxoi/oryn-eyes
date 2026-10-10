@@ -9,12 +9,20 @@ import urllib.parse
 from collections import OrderedDict
 
 
+def response_wait_budget(accepted: dict, fallback: int) -> float:
+    value = accepted.get("timeoutSeconds", fallback)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 1 <= value <= 10200:
+        return fallback
+    return value
+
+
 def trusted_image_url(url: str) -> bool:
     parsed = urllib.parse.urlparse(url)
     host = (parsed.hostname or "").lower()
-    return parsed.scheme == "https" and not parsed.username and parsed.port in (None, 443) and any(
+    trusted_host = host == "multimedia.nt.qq.com.cn" or any(
         host == domain or host.endswith("." + domain) for domain in ("qq.com", "qpic.cn", "gtimg.cn")
     )
+    return parsed.scheme == "https" and not parsed.username and parsed.port in (None, 443) and trusted_host
 
 
 class ImageRedirect(urllib.request.HTTPRedirectHandler):

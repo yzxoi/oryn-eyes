@@ -1,13 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
-import { mkdir, readdir, rm, stat } from "node:fs/promises";
-import path from "node:path";
 import { Incoming, messageKey, type Analysis } from "./contracts";
 import { settingsFromEnv, type Settings } from "./config";
 import { GitHub } from "./github";
 import { validateImage } from "./images";
 import { log, safeError } from "./log";
 import { Queue, type Job } from "./queue";
-import { prepareWorkspace } from "./workspace";
+import { prepareWorkspace, cleanupWorkspaces } from "./workspace";
 import { readGateway } from "./gateway";
 import { modelDefinition } from "./model";
 import { supportPrompt } from "./prompt";
@@ -22,8 +20,8 @@ export function authorized(request: Request, secret: string) {
 export async function startService(settings: Settings, options: { analyze?: typeof runHarness; github?: GitHub; prepare?: typeof prepareWorkspace } = {}) {
   const github = options.github ?? new GitHub(settings.repository, settings.githubToken, fetch, settings.archiveMirror);
   const analyze = options.analyze ?? runHarness;
-  const prepare = options.prepare ?? prepareWorkspace;
-  const queue = new Queue(settings.concurrency, settings.queueLimit);
+  const prepare = options.prepare ?? ((github: GitHub, tempRoot: string, signal?: AbortSignal) => prepareWorkspace(github, tempRoot, signal, settings.sourceCacheRoot ? { root: settings.sourceCacheRoot, token: settings.githubToken, timeoutSeconds: settings.sourceFetchTimeout } : undefined));
+  const queue = new Queue(settings.concurrency, settings.queueLimit, 30 * 60_000, settings.queueBudget * 1000);
   const histories = new Map<string, { updated: number; entries: Incoming["history"] }>();
   let publication: Promise<unknown> = Promise.resolve();
   let ready = false;
@@ -45,7 +43,9 @@ export async function startService(settings: Settings, options: { analyze?: type
   async function processMessage(job: Job, original: Incoming) {
     let work: Awaited<ReturnType<typeof prepareWorkspace>> | undefined;
     let gateway: ReturnType<typeof readGateway> | undefined;
-    const deadline = job.created + settings.budget * 1000;
+    const started = job.started ?? Date.now();
+    const deadline = started + settings.budget * 1000;
+    log("job_budget", { job: job.id, queueSeconds: Math.round((started - job.created) / 1000), taskSeconds: settings.budget });
     const timer = setTimeout(() => job.controller.abort(new Error("Task budget exhausted")), Math.max(1, deadline - Date.now()));
     const check = () => { if (Date.now() >= deadline) job.controller.abort(new Error("Task budget exhausted")); job.controller.signal.throwIfAborted(); };
     try {
@@ -126,7 +126,7 @@ export async function startService(settings: Settings, options: { analyze?: type
           let bytes = 0; for (const image of message.images) bytes += validateImage(image).bytes.length;
           if (bytes > 20_000_000) throw new Error("Image total exceeds 20 MB");
           const { job, duplicate } = queue.submit(messageKey(message, settings.repository), message.conversation, message.sender, job => processMessage(job, message));
-          return Response.json({ id: job.id, status: job.status, duplicate }, { status: 202 });
+          return Response.json({ id: job.id, status: job.status, duplicate, timeoutSeconds: settings.queueBudget + settings.budget }, { status: 202 });
         } catch (error) {
           const busy = error instanceof Error && error.message === "Queue is full";
           return Response.json({ error: busy ? "服务繁忙，请稍后重试" : "Invalid message or image payload" }, { status: busy ? 429 : 400 });
@@ -147,18 +147,17 @@ export async function startService(settings: Settings, options: { analyze?: type
     },
   });
   try {
-    await mkdir(settings.tempRoot, { recursive: true, mode: 0o700 });
-    for (const name of await readdir(settings.tempRoot)) {
-      if (!/^(?:task|worker)-[\w-]+$/.test(name)) continue;
-      const item = path.join(settings.tempRoot, name);
-      if (Date.now() - (await stat(item)).mtimeMs > 2 * 3600_000) await rm(item, { recursive: true, force: true });
-    }
+    await cleanupWorkspaces(settings.tempRoot);
     if (settings.publish) await github.ensureLabels();
     ready = true;
     const definition = modelDefinition(settings.model, "max");
     log("service_ready", { repository: settings.repository, model: settings.model, context: definition.limit.context, reasoningEffort: "max", multimodal: definition.modalities?.input.includes("image") ?? false, publish: settings.publish, port: server.port });
   } catch (error) { server.stop(true); throw error; }
-  return { server, queue, close: () => { queue.close(); server.stop(true); } };
+  const cleanupTimer = setInterval(() => {
+    void cleanupWorkspaces(settings.tempRoot).catch(error => log("workspace_cleanup_failed", { error: safeError(error, secrets) }));
+  }, 15 * 60_000);
+  cleanupTimer.unref();
+  return { server, queue, close: () => { clearInterval(cleanupTimer); queue.close(); server.stop(true); } };
 }
 
 if (import.meta.main) {

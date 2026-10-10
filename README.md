@@ -22,7 +22,7 @@ flowchart LR
 - Answers usage questions; asks for missing essential information; links existing Issues; directly files clear new bugs, feature requests, and documentation gaps.
 - Searches open/closed Issues and PRs through a repository-scoped read gateway. A create/known-issue result requires successful search evidence.
 - Downloads source at a specific commit for each task. File citations are checked against actual source lines and quotes. Static evidence is explicitly separated from user descriptions and hypotheses; no execution/reproduction is claimed.
-- Sends image bytes through Core attachments to the model. QQ and Feishu images are normalized, resized, and stripped of EXIF metadata. Current and quoted screenshots take precedence over recent images.
+- Sends image bytes through Core attachments to the model. QQ and Feishu images are normalized, resized, and stripped of EXIF metadata. Current and quoted screenshots take precedence over recent images. QQ downloads accept trusted HTTPS CDN hosts, including QQ NT's `multimedia.nt.qq.com.cn`; redirects must stay within the same allowlist.
 - Publishes relevant, non-sensitive screenshots to `.oryn-eyes/assets/` on the target repository's `oryn-eyes-assets` branch, linking them in the Issue. This avoids inventing an unsupported GitHub attachment-upload API or changing the development branch.
 - Adds readable Issue sections and labels. The host performs all GitHub writes; the model has no GitHub token or write tools.
 
@@ -80,7 +80,8 @@ The service binds to loopback and authenticates all message/status/cancel APIs. 
 | `ORYN_REPOSITORY` | `YourTongji/YourTJ-Hub` |
 | `ORYN_MODEL` | `glm-5.3-flash` |
 | `ORYN_BASE_URL` | Official Zhipu Coding Plan endpoint |
-| `ORYN_BUDGET_SECONDS` | `900` |
+| `ORYN_BUDGET_SECONDS` | `1800` (execution, starting after admission from the queue) |
+| `ORYN_QUEUE_BUDGET_SECONDS` | `1800` (maximum queue wait, separately bounded) |
 | `ORYN_CONCURRENCY` | `2` |
 | `ORYN_QUEUE_LIMIT` | `20` |
 | `ORYN_PORT` | `18080` |
@@ -92,13 +93,41 @@ The task budget bounds the whole task. Provider request timeouts use the remaini
 
 ## State and limits
 
-Only necessary redacted service diagnostics remain locally. Model sessions, source snapshots and images are temporary. Concurrent tasks share an in-memory source archive for at most five minutes, keyed by the exact commit; each task still gets its own extracted workspace. Credentials and installed code are deployment inputs, not memory. Message deduplication and status are in memory for 30 minutes; published Issues carry an opaque marker so repeated deliveries can recover a prior creation from recent Issues. No promise of exactly-once delivery across arbitrary outages is made: ambiguous GitHub writes are checked before any retry, and automatic blind write retries are prohibited.
+Queue waiting does not consume the execution budget. Each task gets its full execution budget
+when it starts, including source preparation, inference and publication. Queue waiting has its
+own limit and expires without running the model. Admission returns `timeoutSeconds` for the
+combined maximum; the QQ adapter uses it plus 60 seconds for the final reply. Older adapters
+must have their polling timeout adjusted separately. The support prompt asks for focused
+intake evidence instead of exhaustive implementation research; reasoning remains `max`.
+
+Unknown screenshot IDs are corrected inside the existing bounded Core report-correction loop,
+within the original task budget. The prompt lists the supplied IDs and requires an empty list
+when no relevant image is available. Publication still independently rejects unknown IDs.
+
+Only necessary redacted service diagnostics remain locally. Model sessions, source snapshots and images are temporary. In archive mode, concurrent tasks share an in-memory source archive for at most five minutes, keyed by the exact commit; each task still gets its own extracted workspace. The optional source cache described below persists repository Git objects only. Credentials and installed code are deployment inputs, not memory. Message deduplication and status are in memory for 30 minutes; published Issues carry an opaque marker so repeated deliveries can recover a prior creation from recent Issues. No promise of exactly-once delivery across arbitrary outages is made: ambiguous GitHub writes are checked before any retry, and automatic blind write retries are prohibited.
 
 See [the decision record](docs/decisions/2026-09-12-core-support-service.md) and [upstream provenance](NOTICE.md).
 
 ### Source downloads on slower networks
 
-Source preparation shares the request's total budget (`ORYN_BUDGET_SECONDS`), including cancellation. Concurrent requests reuse a commit's in-flight download; stopping one request leaves other consumers running, while stopping the last consumer aborts the transfer. Completed archives are cached in RAM for five minutes. Extraction retains its 120-second resource limit and also stops when the request is cancelled.
+Set `ORYN_SOURCE_CACHE_ROOT` to a host-owned directory to keep a shallow bare Git cache.
+Every message resolves the current default-branch commit through GitHub. Missing commits are fetched
+incrementally from the official repository with a separate `ORYN_SOURCE_FETCH_TIMEOUT_SECONDS`
+limit (default 120 seconds); unchanged commits require no Git transfer. Cache failures fall back to
+an archive of the same resolved commit, within another source-fetch timeout and the remaining task
+budget. The configured archive mirror is used only for repositories verified public. If both paths
+fail, the task fails explicitly rather than using stale source. Git credentials are supplied only to the host's
+Git process, never stored in the cache or given to the model.
+
+Each task exports its exact commit into a separate temporary workspace with no `.git` directory.
+Concurrent cache access is serialized, while prepared snapshots are independent. The workspace is
+removed on completion, failure or cancellation. Startup and a 15-minute maintenance timer remove
+orphaned task/worker directories older than two hours; active workspaces are excluded. The persistent
+cache contains repository source only, not conversations, screenshots or model history. One service
+process owns a cache root. Keep it outside `ORYN_TEMP_ROOT`, on storage accessible only to the service.
+
+Without `ORYN_SOURCE_CACHE_ROOT`, source preparation uses the bounded archive download and optional
+public archive mirror. Both modes share the total task budget and preserve safe extraction limits.
 
 `ORYN_GITHUB_ARCHIVE_MIRROR` is an optional operator-trusted download prefix. Only repositories confirmed public by the official GitHub API use it. The service resolves the commit SHA from GitHub first and downloads that SHA's archive through the prefix; GitHub tokens, API calls, Issue writes, and screenshots never go through it. This trusts the mirror to deliver source faithfully: a SHA in the URL alone does not authenticate archive bytes. Leave it unset for official downloads. Mirror failures fail the request within its budget and appear in service logs.
 

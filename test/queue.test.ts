@@ -27,3 +27,25 @@ test("same-sender turns are serialized while other senders can proceed", async (
   await Bun.sleep(2); expect(order).toEqual(["first", "other"]);
   release(); await Bun.sleep(2); expect(order).toEqual(["first", "other", "followup"]);
 });
+
+test("queue wait expires without running and releases capacity", async () => {
+  const queue = new Queue(1, 2, 60_000, 25);
+  let release!: () => void, ran = false;
+  queue.submit("first", "g", "u", () => new Promise<void>(r => { release = r; }));
+  const waiting = queue.submit("waiting", "g", "v", async () => { ran = true; }).job;
+  await Bun.sleep(60);
+  expect(waiting.status).toBe("failed"); expect(waiting.stage).toBe("排队超时");
+  expect(waiting.started).toBeUndefined(); expect(ran).toBe(false); expect(queue.stats().queued).toBe(0);
+  expect(() => queue.submit("replacement", "g", "v", async () => {})).not.toThrow();
+  queue.close(); release(); await Bun.sleep(1);
+});
+
+test("cancelling a queued job clears its wait deadline", async () => {
+  const queue = new Queue(1, 2, 60_000, 20);
+  let release!: () => void;
+  queue.submit("first", "g", "u", () => new Promise<void>(r => { release = r; }));
+  const job = queue.submit("waiting", "g", "v", async () => { throw new Error("Must not execute"); }).job;
+  queue.cancel(job.id); await Bun.sleep(40);
+  expect(job.status).toBe("cancelled"); expect(queue.stats().queued).toBe(0);
+  release(); await Bun.sleep(1); queue.close();
+});
