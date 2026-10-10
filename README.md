@@ -113,8 +113,10 @@ See [the decision record](docs/decisions/2026-09-12-core-support-service.md) and
 Set `ORYN_SOURCE_CACHE_ROOT` to a host-owned directory to keep a shallow bare Git cache.
 Every message resolves the current default-branch commit through GitHub. Missing commits are fetched
 incrementally from the official repository with a separate `ORYN_SOURCE_FETCH_TIMEOUT_SECONDS`
-limit (default 120 seconds); unchanged commits require no Git transfer. Fetch failures fail the task
-explicitly rather than silently using stale source. Git credentials are supplied only to the host's
+limit (default 120 seconds); unchanged commits require no Git transfer. Cache failures fall back to
+an archive of the same resolved commit, within another source-fetch timeout and the remaining task
+budget. The configured archive mirror is used only for repositories verified public. If both paths
+fail, the task fails explicitly rather than using stale source. Git credentials are supplied only to the host's
 Git process, never stored in the cache or given to the model.
 
 Each task exports its exact commit into a separate temporary workspace with no `.git` directory.

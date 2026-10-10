@@ -3,6 +3,7 @@ import path from "node:path";
 import type { GitHub } from "./github";
 import { abortable, command } from "./process";
 import { sourceSnapshot } from "./source-cache";
+import { log, safeError } from "./log";
 
 const active = new Set<string>();
 export async function cleanupWorkspaces(root: string, maxAgeMs = 2 * 3600_000) {
@@ -26,7 +27,18 @@ export async function prepareWorkspace(github: GitHub, tempRoot: string, signal?
     const repo = await abortable(github.metadata(), signal);
     const sha = await abortable(github.head(repo.default_branch), signal);
     const archive = path.join(directory, "repository.tar.gz");
-    if (cache) await sourceSnapshot({ cacheRoot: cache.root, repository: github.repository, sha, archive, token: cache.token, timeoutSeconds: cache.timeoutSeconds, signal });
+    if (cache) {
+      try {
+        await sourceSnapshot({ cacheRoot: cache.root, repository: github.repository, sha, archive, token: cache.token, timeoutSeconds: cache.timeoutSeconds, signal });
+      } catch (error) {
+        signal?.throwIfAborted();
+        log("source_cache_fallback", { sha, error: safeError(error, [cache.token]) });
+        const timeout = AbortSignal.timeout(cache.timeoutSeconds * 1000);
+        const fallbackSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+        // Resolve once above: a failed Git refresh must never select an older cached commit.
+        await Bun.write(archive, await github.archive(sha, fallbackSignal, !repo.private));
+      }
+    }
     else await Bun.write(archive, await github.archive(sha, signal, !repo.private));
     const workspace = path.join(directory, "workspace");
     await mkdir(workspace);
